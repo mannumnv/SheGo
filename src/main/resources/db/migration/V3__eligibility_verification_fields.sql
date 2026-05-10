@@ -1,0 +1,32 @@
+alter table rider_profile
+    add column rider_date_of_birth date,
+    add column rider_age integer not null default 0,
+    add column rider_gender varchar(32),
+    add column rider_age_category varchar(32),
+    add column address varchar(255),
+    add column profile_photo_storage_key varchar(255),
+    add column emergency_contact varchar(255),
+    add column guardian_name varchar(255),
+    add column guardian_relationship varchar(255),
+    add column guardian_mobile_number varchar(255),
+    add column guardian_aadhaar_number varchar(1024),
+    add column rider_aadhaar_number varchar(1024),
+    add column guardian_consent boolean not null default false,
+    add column verification_type varchar(32);
+
+alter table driver_profile
+    add column date_of_birth date,
+    add column age integer not null default 0,
+    add column gender varchar(32),
+    add column address varchar(255),
+    add column aadhaar_number varchar(1024),
+    add column driving_license_number varchar(255),
+    add column vehicle_type varchar(32),
+    add column vehicle_registration_number varchar(255),
+    add column insurance_details varchar(255),
+    add column selfie_storage_key varchar(255),
+    add column aadhaar_storage_key varchar(255),
+    add column license_storage_key varchar(255),
+    add column vehicle_document_storage_key varchar(255),
+    add column insurance_document_storage_key varchar(255),
+    add column admin_approval_status varchar(32) default 'PENDING';

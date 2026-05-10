@@ -1,0 +1,33 @@
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: shego
+      POSTGRES_USER: shego
+      POSTGRES_PASSWORD: shego
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7
+    ports:
+      - "6379:6379"
+
+  api:
+    build: .
+    depends_on:
+      - postgres
+      - redis
+    environment:
+      DB_URL: jdbc:postgresql://postgres:5432/shego
+      DB_USERNAME: shego
+      DB_PASSWORD: shego
+      REDIS_HOST: redis
+      JWT_SECRET: change-this-dev-secret-change-this-dev-secret
+    ports:
+      - "8080:8080"
+
+volumes:
+  postgres-data:
