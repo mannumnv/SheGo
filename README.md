@@ -111,7 +111,47 @@ flutter pub get
 flutter run -d chrome
 ```
 
-The Flutter app calls `http://localhost:8080` by default.
+The Flutter app calls `http://localhost:8080` by default. For another backend URL:
+
+```bash
+flutter run -d chrome --dart-define=API_BASE_URL=http://localhost:8080
+```
+
+## Flutter App Flows
+
+The Flutter app now starts with the SheGo splash screen, restores any saved JWT session, and routes by backend role:
+
+- `ADMIN` opens the admin dashboard.
+- `RIDER` opens `RiderHomeScreen`.
+- `DRIVER` opens `DriverHomeScreen`.
+
+JWT session persistence uses Flutter secure storage; logout clears the saved token and returns to role selection.
+
+Rider flow:
+
+```text
+Splash -> Role selection -> Rider login/signup -> Rider home
+-> Book ride -> Estimate -> Searching driver -> Ride accepted
+-> Driver details/start OTP -> Active tracking -> Payment -> Rating/review
+```
+
+Driver flow:
+
+```text
+Splash -> Role selection -> Driver login/signup -> Driver home
+-> KYC/admin status -> Online/offline availability
+-> Ride request -> Rider details -> Navigate to pickup
+-> Mark arrival -> Enter OTP -> Active ride -> Complete ride -> Earnings/history
+```
+
+Admin flow:
+
+```text
+Splash -> Role selection -> Admin login -> Admin dashboard
+-> Pending drivers -> Approve/Reject -> Refresh pending list
+```
+
+Local test users depend on your database. The default local admin is created from `.env` when no admin exists. Rider and driver users can be created from the Flutter signup screens or the signup APIs documented in [docs/API.md](docs/API.md).
 
 ## Environment Variables
 

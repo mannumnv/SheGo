@@ -13,6 +13,14 @@ public interface DriverProfileRepository extends JpaRepository<DriverProfile, UU
     List<DriverProfile> findByKycStatus(com.shego.common.KycStatus status);
     List<DriverProfile> findByAdminApprovalStatus(com.shego.common.AdminApprovalStatus status);
 
+    @Query("""
+            select d
+            from DriverProfile d
+            join fetch d.user u
+            where d.id = :id
+            """)
+    Optional<DriverProfile> findByIdWithUser(UUID id);
+
     @Query("select d from DriverProfile d where d.online = true and d.available = true and d.adminApproved = true and d.kycStatus = com.shego.common.KycStatus.APPROVED")
     List<DriverProfile> findAvailableApprovedDrivers();
 

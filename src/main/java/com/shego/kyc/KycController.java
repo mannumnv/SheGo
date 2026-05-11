@@ -3,6 +3,8 @@ package com.shego.kyc;
 import com.shego.common.ApiResponse;
 import com.shego.user.CurrentUserService;
 import jakarta.validation.Valid;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -16,6 +18,8 @@ import java.util.UUID;
 
 @RestController
 public class KycController {
+    private static final Logger log = LoggerFactory.getLogger(KycController.class);
+
     private final KycService kycService;
     private final CurrentUserService currentUserService;
 
@@ -43,12 +47,18 @@ public class KycController {
     @PreAuthorize("hasAnyRole('ADMIN','SUPPORT')")
     @PostMapping("/api/admin/kyc/{id}/approve")
     ApiResponse<KycDtos.KycResponse> approve(@PathVariable UUID id) {
-        return ApiResponse.ok("KYC approved", KycDtos.KycResponse.from(kycService.approve(id)));
+        log.debug("KycController entry: POST /api/admin/kyc/{id}/approve id={}", id);
+        var response = KycDtos.KycResponse.from(kycService.approve(id));
+        log.debug("KycController return: KYC approved id={}, status={}", response.id(), response.status());
+        return ApiResponse.ok("KYC approved", response);
     }
 
     @PreAuthorize("hasAnyRole('ADMIN','SUPPORT')")
     @PostMapping("/api/admin/kyc/{id}/reject")
     ApiResponse<KycDtos.KycResponse> reject(@PathVariable UUID id, @RequestBody KycDtos.RejectRequest request) {
-        return ApiResponse.ok("KYC rejected", KycDtos.KycResponse.from(kycService.reject(id, request.reason())));
+        log.debug("KycController entry: POST /api/admin/kyc/{id}/reject id={}", id);
+        var response = KycDtos.KycResponse.from(kycService.reject(id, request.reason()));
+        log.debug("KycController return: KYC rejected id={}, status={}", response.id(), response.status());
+        return ApiResponse.ok("KYC rejected", response);
     }
 }

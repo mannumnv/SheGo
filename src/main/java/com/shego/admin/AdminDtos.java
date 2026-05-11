@@ -10,6 +10,24 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import java.util.UUID;
 
 public class AdminDtos {
+    @Schema(name = "RiderApprovalResponse", description = "Admin rider approval result for rider_profile approval.")
+    public record RiderApprovalResponse(
+            @Schema(example = "3f6c7b7a-4d5b-4bd5-8c6a-2a7f8b7d9c10") UUID id,
+            @Schema(example = "APPROVED") KycStatus kycStatus,
+            @Schema(example = "ACTIVE") com.shego.common.AccountStatus accountStatus,
+            @Schema(example = "SELF_AADHAAR") com.shego.common.VerificationType verificationType
+    ) {
+    }
+
+    @Schema(name = "DriverApprovalResponse", description = "Admin driver approval result without exposing KYC documents or Aadhaar values.")
+    public record DriverApprovalResponse(
+            @Schema(example = "3f6c7b7a-4d5b-4bd5-8c6a-2a7f8b7d9c10") UUID driverId,
+            @Schema(example = "APPROVED") KycStatus kycStatus,
+            @Schema(example = "APPROVED") AdminApprovalStatus adminApprovalStatus,
+            @Schema(example = "true") boolean adminApproved
+    ) {
+    }
+
     @Schema(name = "PendingDriverVerificationResponse", description = "Admin-safe driver verification row for pending KYC/admin approval review.")
     public record PendingDriverVerificationResponse(
             @Schema(example = "3f6c7b7a-4d5b-4bd5-8c6a-2a7f8b7d9c10") UUID driverId,

@@ -20,6 +20,8 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -33,6 +35,7 @@ import java.util.UUID;
 
 @Service
 public class RideService {
+    private static final Logger log = LoggerFactory.getLogger(RideService.class);
     private static final List<RideStatus> ACTIVE = List.of(RideStatus.REQUESTED, RideStatus.ACCEPTED, RideStatus.DRIVER_REACHED, RideStatus.DRIVER_ARRIVING, RideStatus.STARTED);
     private static final int START_OTP_MAX_RETRIES = 5;
     private static final Duration START_OTP_TTL = Duration.ofMinutes(10);
@@ -287,7 +290,12 @@ public class RideService {
         if (key == null || key.isBlank()) {
             return null;
         }
-        return storage.temporaryDownloadUrl(key);
+        try {
+            return storage.temporaryDownloadUrl(key);
+        } catch (RuntimeException exception) {
+            log.warn("Could not generate temporary profile photo URL for ride participant key={}: {}", key, exception.getMessage());
+            return null;
+        }
     }
 
     private String startOtpKey(UUID rideId) {

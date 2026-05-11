@@ -3,9 +3,13 @@ package com.shego.kyc;
 import com.shego.common.AccountStatus;
 import com.shego.common.KycStatus;
 import com.shego.driver.DriverProfileRepository;
+import com.shego.exception.BusinessException;
 import com.shego.rider.RiderProfileRepository;
 import com.shego.user.User;
 import com.shego.user.UserRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -14,6 +18,8 @@ import java.util.UUID;
 
 @Service
 public class KycService {
+    private static final Logger log = LoggerFactory.getLogger(KycService.class);
+
     private final KycDocumentRepository documents;
     private final RiderProfileRepository riders;
     private final DriverProfileRepository drivers;
@@ -45,27 +51,40 @@ public class KycService {
 
     @Transactional
     public KycDocument approve(UUID id) {
-        KycDocument document = documents.findById(id).orElseThrow();
+        log.debug("KYC approve flow started: kycDocumentId={}", id);
+        KycDocument document = documents.findById(id)
+                .orElseThrow(() -> new BusinessException("KYC document not found", HttpStatus.NOT_FOUND));
+        log.debug("KYC document found: kycDocumentId={}, userId={}, status={}, documentType={}",
+                document.getId(), document.getUser().getId(), document.getStatus(), document.getDocumentType());
         document.setStatus(KycStatus.APPROVED);
         User user = document.getUser();
         user.setFemaleVerified(true);
         user.setAccountStatus(AccountStatus.ACTIVE);
         riders.findByUser(user).ifPresent(r -> {
+            log.debug("Approving linked rider profile from KYC document: riderId={}", r.getId());
             r.setKycStatus(KycStatus.APPROVED);
             riders.save(r);
         });
         drivers.findByUser(user).ifPresent(d -> {
+            log.debug("Approving linked driver KYC from KYC document: driverId={}", d.getId());
             d.setKycStatus(KycStatus.APPROVED);
             drivers.save(d);
         });
         users.save(user);
-        return documents.save(document);
+        var saved = documents.save(document);
+        log.debug("KYC approve flow completed: kycDocumentId={}, status={}", saved.getId(), saved.getStatus());
+        return saved;
     }
 
+    @Transactional
     public KycDocument reject(UUID id, String reason) {
-        KycDocument document = documents.findById(id).orElseThrow();
+        log.debug("KYC reject flow started: kycDocumentId={}", id);
+        KycDocument document = documents.findById(id)
+                .orElseThrow(() -> new BusinessException("KYC document not found", HttpStatus.NOT_FOUND));
         document.setStatus(KycStatus.REJECTED);
         document.setRejectionReason(reason);
-        return documents.save(document);
+        var saved = documents.save(document);
+        log.debug("KYC reject flow completed: kycDocumentId={}, status={}", saved.getId(), saved.getStatus());
+        return saved;
     }
 }

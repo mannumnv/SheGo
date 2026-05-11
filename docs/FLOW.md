@@ -220,7 +220,7 @@ POST /api/dev/users/reset-password
 ```json
 {
   "mobileNumber": "9999999999",
-  "newPassword": "Admin1234"
+  "newPassword": "admin12345"
 }
 ```
 

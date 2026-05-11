@@ -1,13 +1,11 @@
 package com.shego.admin;
 
 import com.shego.common.AccountStatus;
-import com.shego.common.AdminApprovalStatus;
 import com.shego.common.ApiResponse;
 import com.shego.common.KycStatus;
 import com.shego.common.VerificationType;
 import com.shego.driver.DriverDtos;
 import com.shego.driver.DriverProfileRepository;
-import com.shego.driver.DriverService;
 import com.shego.rider.RiderDtos;
 import com.shego.rider.RiderProfileRepository;
 import com.shego.ride.RideDtos;
@@ -38,20 +36,18 @@ public class AdminController {
     private final UserRepository users;
     private final RideService rides;
     private final SosService sos;
-    private final DriverService drivers;
     private final DriverProfileRepository driverProfiles;
     private final RiderProfileRepository riderProfiles;
     private final AdminActionLogRepository logs;
     private final CurrentUserService currentUserService;
     private final AdminService adminService;
 
-    public AdminController(UserRepository users, RideService rides, SosService sos, DriverService drivers,
+    public AdminController(UserRepository users, RideService rides, SosService sos,
                            DriverProfileRepository driverProfiles, RiderProfileRepository riderProfiles,
                            AdminActionLogRepository logs, CurrentUserService currentUserService, AdminService adminService) {
         this.users = users;
         this.rides = rides;
         this.sos = sos;
-        this.drivers = drivers;
         this.driverProfiles = driverProfiles;
         this.riderProfiles = riderProfiles;
         this.logs = logs;
@@ -92,9 +88,37 @@ public class AdminController {
     }
 
     @PostMapping("/drivers/{id}/approve")
-    ApiResponse<DriverDtos.DriverResponse> approveDriver(@PathVariable UUID id) {
+    @io.swagger.v3.oas.annotations.Operation(
+            summary = "Approve driver by driverId",
+            description = "Approves a driver_profile using driverId. This endpoint is separate from KYC document approval and is safe when local/dev KYC document rows are missing."
+    )
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "200",
+            description = "Driver approved successfully",
+            content = @io.swagger.v3.oas.annotations.media.Content(
+                    mediaType = "application/json",
+                    schema = @io.swagger.v3.oas.annotations.media.Schema(implementation = AdminDtos.DriverApprovalResponse.class),
+                    examples = @io.swagger.v3.oas.annotations.media.ExampleObject(value = """
+                            {
+                              "success": true,
+                              "message": "Driver approved successfully",
+                              "data": {
+                                "driverId": "3f6c7b7a-4d5b-4bd5-8c6a-2a7f8b7d9c10",
+                                "kycStatus": "APPROVED",
+                                "adminApprovalStatus": "APPROVED",
+                                "adminApproved": true
+                              }
+                            }
+                            """)
+            )
+    )
+    ApiResponse<AdminDtos.DriverApprovalResponse> approveDriver(@PathVariable UUID id) {
+        logger.debug("AdminController entry: POST /api/admin/drivers/{id}/approve driverId={}", id);
+        var response = adminService.approveDriverVerificationSummary(id);
         log("APPROVE_DRIVER", "DriverProfile", id.toString(), null);
-        return ApiResponse.ok("Driver approved", drivers.response(drivers.approve(id)));
+        logger.debug("AdminController return: driver approved driverId={}, kycStatus={}, adminApprovalStatus={}, adminApproved={}",
+                response.driverId(), response.kycStatus(), response.adminApprovalStatus(), response.adminApproved());
+        return ApiResponse.ok("Driver approved successfully", response);
     }
 
     @GetMapping("/rides/active")
@@ -166,43 +190,57 @@ public class AdminController {
     }
 
     @PostMapping("/approve-rider-verification")
-    ApiResponse<RiderDtos.RiderProfileResponse> approveRiderVerification(@org.springframework.web.bind.annotation.RequestParam UUID riderId) {
-        var rider = riderProfiles.findById(riderId).orElseThrow();
-        rider.setKycStatus(KycStatus.APPROVED);
-        rider.getUser().setAccountStatus(AccountStatus.ACTIVE);
-        users.save(rider.getUser());
-        log("APPROVE_RIDER_VERIFICATION", "RiderProfile", riderId.toString(), rider.getVerificationType() == null ? null : rider.getVerificationType().name());
-        return ApiResponse.ok("Rider verification approved", RiderDtos.RiderProfileResponse.from(riderProfiles.save(rider)));
+    @io.swagger.v3.oas.annotations.Operation(summary = "Approve rider verification", description = "Approves rider_profile by riderId and activates the linked user. Safe if guardian/KYC document rows are missing in local/dev.")
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "200",
+            description = "Rider verification approved",
+            content = @io.swagger.v3.oas.annotations.media.Content(
+                    mediaType = "application/json",
+                    examples = @io.swagger.v3.oas.annotations.media.ExampleObject(value = """
+                            {
+                              "success": true,
+                              "message": "Rider verification approved",
+                              "data": {
+                                "id": "rider-profile-uuid",
+                                "kycStatus": "APPROVED",
+                                "accountStatus": "ACTIVE"
+                              }
+                            }
+                            """)
+            )
+    )
+    ApiResponse<AdminDtos.RiderApprovalResponse> approveRiderVerification(@org.springframework.web.bind.annotation.RequestParam UUID riderId) {
+        logger.debug("AdminController entry: POST /api/admin/approve-rider-verification riderId={}", riderId);
+        var response = adminService.approveRiderVerification(riderId);
+        log("APPROVE_RIDER_VERIFICATION", "RiderProfile", riderId.toString(), response.verificationType() == null ? null : response.verificationType().name());
+        logger.debug("AdminController return: rider approval riderId={}, kycStatus={}", riderId, response.kycStatus());
+        return ApiResponse.ok("Rider verification approved", response);
     }
 
     @PostMapping("/approve-driver-verification")
+    @io.swagger.v3.oas.annotations.Operation(summary = "Approve driver verification", description = "Approves driver_profile by driverId. This is separate from KYC document approval.")
     ApiResponse<DriverDtos.DriverProfileResponse> approveDriverVerification(@RequestParam UUID driverId) {
-        var driver = driverProfiles.findById(driverId).orElseThrow();
-        driver.setKycStatus(KycStatus.APPROVED);
-        driver.setAdminApprovalStatus(AdminApprovalStatus.APPROVED);
-        driver.setAdminApproved(true);
-        driver.getUser().setAccountStatus(AccountStatus.ACTIVE);
-        users.save(driver.getUser());
+        logger.debug("AdminController entry: POST /api/admin/approve-driver-verification driverId={}", driverId);
+        var response = adminService.approveDriverVerification(driverId);
         log("APPROVE_DRIVER_VERIFICATION", "DriverProfile", driverId.toString(), null);
-        return ApiResponse.ok("Driver verification approved", DriverDtos.DriverProfileResponse.from(driverProfiles.save(driver)));
+        logger.debug("AdminController return: driver approval driverId={}, kycStatus={}, adminApprovalStatus={}",
+                driverId, response.kycStatus(), response.adminApprovalStatus());
+        return ApiResponse.ok("Driver verification approved", response);
     }
 
     @PostMapping("/reject-driver-verification")
     ApiResponse<DriverDtos.DriverProfileResponse> rejectDriverVerification(@RequestParam UUID driverId,
                                                                            @RequestParam(required = false) String reason) {
-        var driver = driverProfiles.findById(driverId).orElseThrow();
-        driver.setKycStatus(KycStatus.REJECTED);
-        driver.setAdminApprovalStatus(AdminApprovalStatus.REJECTED);
-        driver.setAdminApproved(false);
-        driver.setAvailable(false);
-        driver.setOnline(false);
+        logger.debug("AdminController entry: POST /api/admin/reject-driver-verification driverId={}", driverId);
+        var response = adminService.rejectDriverVerification(driverId, reason);
         log("REJECT_DRIVER_VERIFICATION", "DriverProfile", driverId.toString(), reason);
-        return ApiResponse.ok("Driver verification rejected", DriverDtos.DriverProfileResponse.from(driverProfiles.save(driver)));
+        return ApiResponse.ok("Driver verification rejected", response);
     }
 
     private void log(String action, String targetType, String targetId, String notes) {
         AdminActionLog log = new AdminActionLog();
-        log.setAdmin(currentUserService.current());
+        var currentAdmin = currentUserService.current();
+        log.setAdmin(users.getReferenceById(currentAdmin.getId()));
         log.setAction(action);
         log.setTargetType(targetType);
         log.setTargetId(targetId);

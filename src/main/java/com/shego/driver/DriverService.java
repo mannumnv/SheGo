@@ -174,8 +174,11 @@ public class DriverService {
 
     public DriverProfile approve(UUID id) {
         DriverProfile driver = drivers.findById(id).orElseThrow();
+        driver.setKycStatus(KycStatus.APPROVED);
         driver.setAdminApproved(true);
         driver.setAdminApprovalStatus(AdminApprovalStatus.APPROVED);
+        driver.setAvailable(false);
+        driver.setOnline(false);
         return drivers.save(driver);
     }
 

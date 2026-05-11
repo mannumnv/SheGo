@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { RideClient } from '../clients/rideClient';
-import { auth } from '../clients/authClient';
+import { apiUrl, auth } from '../clients/authClient';
 import { createApprovedRiderAndDriver, requireAdmin } from '../utils/flow';
 import { expectOk } from '../utils/assertions';
 
@@ -25,7 +25,7 @@ test.describe('Full SheGo ride flow', () => {
     const completed = await expectOk(await rides.complete(flow.driverToken, booked.id));
     expect(completed.status).toBe('COMPLETED');
 
-    const rating = await expectOk(await request.post('/api/ratings', {
+    const rating = await expectOk(await request.post(apiUrl('/api/ratings'), {
       headers: auth(flow.riderToken),
       data: {
         rideId: booked.id,
