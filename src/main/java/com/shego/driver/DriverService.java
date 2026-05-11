@@ -14,6 +14,8 @@ import com.shego.user.User;
 import com.shego.user.UserRepository;
 import com.shego.vehicle.Vehicle;
 import com.shego.vehicle.VehicleRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -27,6 +29,8 @@ import java.util.UUID;
 
 @Service
 public class DriverService {
+    private static final Logger log = LoggerFactory.getLogger(DriverService.class);
+
     private final DriverProfileRepository drivers;
     private final VehicleRepository vehicles;
     private final UserRepository users;
@@ -95,6 +99,8 @@ public class DriverService {
         vehicle.setInsurancePolicyNumber(request.insuranceDetails());
         vehicle.setActive(true);
         vehicles.save(vehicle);
+        log.debug("Driver signup succeeded: driverId={}, userId={}, mobile={}",
+                savedDriver.getId(), savedUser.getId(), savedUser.getMobileNumber());
         return tokens(savedUser);
     }
 

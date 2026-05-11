@@ -1,0 +1,9 @@
+.env
+.env.local
+target/
+node_modules/
+playwright-report/
+test-results/
+shego_flutter/build/
+/Users/manmohankumar/SheGo/docs/API.md
+/Users/manmohankumar/SheGo/docs/FLOW.md

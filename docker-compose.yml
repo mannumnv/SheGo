@@ -21,11 +21,19 @@ services:
       - postgres
       - redis
     environment:
-      DB_URL: jdbc:postgresql://postgres:5432/shego
-      DB_USERNAME: shego
-      DB_PASSWORD: shego
-      REDIS_HOST: redis
-      JWT_SECRET: change-this-dev-secret-change-this-dev-secret
+      DB_URL: ${DB_URL:-jdbc:postgresql://postgres:5432/shego}
+      DB_USERNAME: ${DB_USERNAME:-shego}
+      DB_PASSWORD: ${DB_PASSWORD:-shego}
+      REDIS_HOST: ${REDIS_HOST:-redis}
+      REDIS_PORT: ${REDIS_PORT:-6379}
+      JWT_SECRET: ${JWT_SECRET:-change-this-dev-secret-change-this-dev-secret}
+      SHEGO_DATA_ENCRYPTION_KEY: ${SHEGO_DATA_ENCRYPTION_KEY:-change-this-32-byte-production-secret}
+      AWS_REGION: ${AWS_REGION:-ap-south-1}
+      S3_BUCKET: ${S3_BUCKET:-shego-dev-private}
+      ADMIN_FULL_NAME: ${ADMIN_FULL_NAME:-SheGo Local Admin}
+      ADMIN_MOBILE: ${ADMIN_MOBILE:-}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
     ports:
       - "8080:8080"
 

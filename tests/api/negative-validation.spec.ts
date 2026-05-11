@@ -12,7 +12,7 @@ test.describe('Negative validation and privacy', () => {
       guardianAadhaarNumber: '123412341234',
       guardianConsent: true,
       riderAadhaarNumber: '123412341234'
-    }));
+    })));
     // Jackson currently ignores unknown JSON fields, preserving backward compatibility.
     // The contract is still enforced by OpenAPI/schema tests: these fields do not exist in DriverDtos.SignupRequest.
     if (data) {

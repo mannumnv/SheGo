@@ -38,12 +38,13 @@ public class SecurityConfig {
                                 "/api/riders/login",
                                 "/api/drivers/signup",
                                 "/api/drivers/login",
+                                "/api/dev/users/reset-password",
                                 "/v3/api-docs/**",
                                 "/swagger-ui/**",
                                 "/swagger-ui.html",
                                 "/ws/**"
                         ).permitAll()
-                        .requestMatchers("/api/admin/**").hasAnyRole("ADMIN", "SUPPORT")
+                        .requestMatchers("/api/admin/**").hasRole("ADMIN")
                         .anyRequest().authenticated())
                 .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class)
                 .build();

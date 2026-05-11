@@ -16,11 +16,14 @@ import com.shego.sos.SosService;
 import com.shego.user.CurrentUserService;
 import com.shego.user.UserDtos;
 import com.shego.user.UserRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.Map;
@@ -28,8 +31,10 @@ import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/admin")
-@PreAuthorize("hasAnyRole('ADMIN','SUPPORT')")
+@PreAuthorize("hasRole('ADMIN')")
 public class AdminController {
+    private static final Logger logger = LoggerFactory.getLogger(AdminController.class);
+
     private final UserRepository users;
     private final RideService rides;
     private final SosService sos;
@@ -38,10 +43,11 @@ public class AdminController {
     private final RiderProfileRepository riderProfiles;
     private final AdminActionLogRepository logs;
     private final CurrentUserService currentUserService;
+    private final AdminService adminService;
 
     public AdminController(UserRepository users, RideService rides, SosService sos, DriverService drivers,
                            DriverProfileRepository driverProfiles, RiderProfileRepository riderProfiles,
-                           AdminActionLogRepository logs, CurrentUserService currentUserService) {
+                           AdminActionLogRepository logs, CurrentUserService currentUserService, AdminService adminService) {
         this.users = users;
         this.rides = rides;
         this.sos = sos;
@@ -50,6 +56,7 @@ public class AdminController {
         this.riderProfiles = riderProfiles;
         this.logs = logs;
         this.currentUserService = currentUserService;
+        this.adminService = adminService;
     }
 
     @GetMapping("/dashboard")
@@ -116,9 +123,46 @@ public class AdminController {
     }
 
     @GetMapping("/pending-driver-kyc")
-    ApiResponse<java.util.List<DriverDtos.DriverProfileResponse>> pendingDriverKyc() {
-        return ApiResponse.ok("Pending driver KYC", driverProfiles.findByKycStatus(KycStatus.PENDING)
-                .stream().map(DriverDtos.DriverProfileResponse::from).toList());
+    @io.swagger.v3.oas.annotations.Operation(
+            summary = "List pending driver verifications",
+            description = "Returns drivers whose KYC is pending, admin approval is pending, or adminApproved is false. Response joins user data and includes vehicle details without exposing Aadhaar or KYC documents."
+    )
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "200",
+            description = "Pending driver verification rows",
+            content = @io.swagger.v3.oas.annotations.media.Content(
+                    mediaType = "application/json",
+                    schema = @io.swagger.v3.oas.annotations.media.Schema(implementation = AdminDtos.PendingDriverVerificationResponse.class),
+                    examples = @io.swagger.v3.oas.annotations.media.ExampleObject(value = """
+                            {
+                              "success": true,
+                              "message": "Pending driver verification",
+                              "data": [
+                                {
+                                  "driverId": "3f6c7b7a-4d5b-4bd5-8c6a-2a7f8b7d9c10",
+                                  "userId": "1a6c7b7a-4d5b-4bd5-8c6a-2a7f8b7d9c10",
+                                  "fullName": "Priya Sharma",
+                                  "mobileNumber": "9876543210",
+                                  "gender": "FEMALE",
+                                  "age": 24,
+                                  "vehicleType": "SCOOTY",
+                                  "vehicleRegistrationNumber": "DL01AB1234",
+                                  "kycStatus": "PENDING",
+                                  "adminApprovalStatus": "PENDING",
+                                  "adminApproved": false,
+                                  "available": false,
+                                  "online": false,
+                                  "aadhaarLast4": "1234",
+                                  "profilePhotoStorageKey": null
+                                }
+                              ]
+                            }
+                            """)
+            )
+    )
+    ApiResponse<java.util.List<AdminDtos.PendingDriverVerificationResponse>> pendingDriverKyc() {
+        logger.debug("AdminController entry: GET /api/admin/pending-driver-kyc");
+        return ApiResponse.ok("Pending driver verification", adminService.pendingDriverVerifications());
     }
 
     @PostMapping("/approve-rider-verification")
@@ -132,7 +176,7 @@ public class AdminController {
     }
 
     @PostMapping("/approve-driver-verification")
-    ApiResponse<DriverDtos.DriverProfileResponse> approveDriverVerification(@org.springframework.web.bind.annotation.RequestParam UUID driverId) {
+    ApiResponse<DriverDtos.DriverProfileResponse> approveDriverVerification(@RequestParam UUID driverId) {
         var driver = driverProfiles.findById(driverId).orElseThrow();
         driver.setKycStatus(KycStatus.APPROVED);
         driver.setAdminApprovalStatus(AdminApprovalStatus.APPROVED);
@@ -141,6 +185,19 @@ public class AdminController {
         users.save(driver.getUser());
         log("APPROVE_DRIVER_VERIFICATION", "DriverProfile", driverId.toString(), null);
         return ApiResponse.ok("Driver verification approved", DriverDtos.DriverProfileResponse.from(driverProfiles.save(driver)));
+    }
+
+    @PostMapping("/reject-driver-verification")
+    ApiResponse<DriverDtos.DriverProfileResponse> rejectDriverVerification(@RequestParam UUID driverId,
+                                                                           @RequestParam(required = false) String reason) {
+        var driver = driverProfiles.findById(driverId).orElseThrow();
+        driver.setKycStatus(KycStatus.REJECTED);
+        driver.setAdminApprovalStatus(AdminApprovalStatus.REJECTED);
+        driver.setAdminApproved(false);
+        driver.setAvailable(false);
+        driver.setOnline(false);
+        log("REJECT_DRIVER_VERIFICATION", "DriverProfile", driverId.toString(), reason);
+        return ApiResponse.ok("Driver verification rejected", DriverDtos.DriverProfileResponse.from(driverProfiles.save(driver)));
     }
 
     private void log(String action, String targetType, String targetId, String notes) {

@@ -1,12 +1,26 @@
 package com.shego.user;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.jpa.repository.EntityGraph;
 
 import java.util.Optional;
 import java.util.UUID;
 
 public interface UserRepository extends JpaRepository<User, UUID> {
+    @EntityGraph(attributePaths = "roles")
     Optional<User> findByMobileNumber(String mobileNumber);
+
+    @EntityGraph(attributePaths = "roles")
     Optional<User> findByEmail(String email);
+
     boolean existsByMobileNumber(String mobileNumber);
+
+    @Query("""
+            select count(u) > 0
+            from User u
+            join u.roles r
+            where r = com.shego.common.Role.ADMIN
+            """)
+    boolean existsAdminUser();
 }

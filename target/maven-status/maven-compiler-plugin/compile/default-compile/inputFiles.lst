@@ -2,6 +2,8 @@
 /Users/manmohankumar/SheGo/src/main/java/com/shego/admin/AdminActionLog.java
 /Users/manmohankumar/SheGo/src/main/java/com/shego/admin/AdminActionLogRepository.java
 /Users/manmohankumar/SheGo/src/main/java/com/shego/admin/AdminController.java
+/Users/manmohankumar/SheGo/src/main/java/com/shego/admin/AdminDtos.java
+/Users/manmohankumar/SheGo/src/main/java/com/shego/admin/AdminService.java
 /Users/manmohankumar/SheGo/src/main/java/com/shego/auth/AuthController.java
 /Users/manmohankumar/SheGo/src/main/java/com/shego/auth/AuthDtos.java
 /Users/manmohankumar/SheGo/src/main/java/com/shego/auth/AuthService.java
@@ -42,6 +44,7 @@
 /Users/manmohankumar/SheGo/src/main/java/com/shego/complaint/ComplaintDtos.java
 /Users/manmohankumar/SheGo/src/main/java/com/shego/complaint/ComplaintRepository.java
 /Users/manmohankumar/SheGo/src/main/java/com/shego/config/AwsConfig.java
+/Users/manmohankumar/SheGo/src/main/java/com/shego/config/DefaultAdminBootstrap.java
 /Users/manmohankumar/SheGo/src/main/java/com/shego/config/JwtAuthenticationFilter.java
 /Users/manmohankumar/SheGo/src/main/java/com/shego/config/JwtService.java
 /Users/manmohankumar/SheGo/src/main/java/com/shego/config/OpenApiConfig.java
@@ -51,6 +54,7 @@
 /Users/manmohankumar/SheGo/src/main/java/com/shego/delivery/DeliveryDtos.java
 /Users/manmohankumar/SheGo/src/main/java/com/shego/delivery/DeliveryRequest.java
 /Users/manmohankumar/SheGo/src/main/java/com/shego/delivery/DeliveryRequestRepository.java
+/Users/manmohankumar/SheGo/src/main/java/com/shego/dev/DevUserController.java
 /Users/manmohankumar/SheGo/src/main/java/com/shego/driver/DriverController.java
 /Users/manmohankumar/SheGo/src/main/java/com/shego/driver/DriverDtos.java
 /Users/manmohankumar/SheGo/src/main/java/com/shego/driver/DriverProfile.java

@@ -27,14 +27,14 @@ deps:
 
 backend: deps
 	# clean removes stale Java 21 compiled classes before running on local Java 17.
-	AWS_REGION=$(AWS_REGION) mvn -Djava.version=17 clean spring-boot:run
+	@set -a; [ ! -f .env ] || . ./.env; set +a; AWS_REGION=$${AWS_REGION:-$(AWS_REGION)} mvn -Djava.version=17 clean spring-boot:run
 
 frontend:
-	cd $(FLUTTER_DIR) && flutter pub get && flutter run -d chrome --dart-define=API_BASE_URL=$(API_BASE_URL)
+	@set -a; [ ! -f .env ] || . ./.env; set +a; cd $(FLUTTER_DIR) && flutter pub get && flutter run -d chrome --dart-define=API_BASE_URL=$${API_BASE_URL:-$(API_BASE_URL)}
 
 # Backend ka .jar build karega.
 backend-build:
-	AWS_REGION=$(AWS_REGION) mvn -Djava.version=17 clean package -DskipTests
+	@set -a; [ ! -f .env ] || . ./.env; set +a; AWS_REGION=$${AWS_REGION:-$(AWS_REGION)} mvn -Djava.version=17 clean package -DskipTests
 
 # Backend Docker image banayega:
 docker-build:
@@ -46,15 +46,15 @@ docker-run:
 
 # Flutter web production build banayega.
 flutter-web:
-	cd $(FLUTTER_DIR) && flutter pub get && flutter build web --dart-define=API_BASE_URL=$(API_BASE_URL)
+	@set -a; [ ! -f .env ] || . ./.env; set +a; cd $(FLUTTER_DIR) && flutter pub get && flutter build web --dart-define=API_BASE_URL=$${API_BASE_URL:-$(API_BASE_URL)}
 
 # Android APK build karega.
 flutter-apk:
-	cd $(FLUTTER_DIR) && flutter pub get && flutter build apk --release --dart-define=API_BASE_URL=$(API_BASE_URL)
+	@set -a; [ ! -f .env ] || . ./.env; set +a; cd $(FLUTTER_DIR) && flutter pub get && flutter build apk --release --dart-define=API_BASE_URL=$${API_BASE_URL:-$(API_BASE_URL)}
 
 # Play Store ke liye Android App Bundle build karega.
 flutter-android-bundle:
-	cd $(FLUTTER_DIR) && flutter pub get && flutter build appbundle --release --dart-define=API_BASE_URL=$(API_BASE_URL)
+	@set -a; [ ! -f .env ] || . ./.env; set +a; cd $(FLUTTER_DIR) && flutter pub get && flutter build appbundle --release --dart-define=API_BASE_URL=$${API_BASE_URL:-$(API_BASE_URL)}
 
 stop:
 	docker compose down

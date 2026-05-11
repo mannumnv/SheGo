@@ -12,6 +12,8 @@ SheGo is a women-only ride booking backend for India, focused on verified female
 - Deployment: Docker-ready for AWS EC2/ECS with RDS PostgreSQL, Redis/ElastiCache, S3, and CloudWatch.
 - Frontend direction: Flutter for Rider and Driver apps; React for Admin dashboard.
 
+Detailed API reference is documented in [docs/API.md](docs/API.md), and step-by-step product/API flows are documented in [docs/FLOW.md](docs/FLOW.md).
+
 ## Current MVP Modules
 
 - Auth with JWT/refresh token endpoints and BCrypt password hashing.
@@ -113,8 +115,17 @@ The Flutter app calls `http://localhost:8080` by default.
 
 ## Environment Variables
 
+Create a local `.env` from the example file:
+
+```bash
+cp .env.example .env
+```
+
+Then edit `.env` with your local values. `make backend`, `make frontend`, backend builds, and Flutter builds load this file automatically.
+
 ```text
 PORT=8080
+API_BASE_URL=http://localhost:8080
 DB_URL=jdbc:postgresql://localhost:5432/shego
 DB_USERNAME=shego
 DB_PASSWORD=shego
@@ -122,11 +133,41 @@ REDIS_HOST=localhost
 REDIS_PORT=6379
 JWT_SECRET=change-this-dev-secret-change-this-dev-secret
 SHEGO_DATA_ENCRYPTION_KEY=change-this-32-byte-production-secret
+ADMIN_FULL_NAME=SheGo Local Admin
+ADMIN_MOBILE=9999999999
+ADMIN_EMAIL=admin@shego.local
+ADMIN_PASSWORD=change-this-local-admin-password
 ACCESS_TOKEN_MINUTES=30
 REFRESH_TOKEN_DAYS=30
 S3_BUCKET=shego-dev-private
 GOOGLE_MAPS_API_KEY=
 ```
+
+## Local Admin Login
+
+On backend startup, SheGo checks whether any `ADMIN` user exists. If no admin exists, it creates one from environment variables loaded from `.env`.
+
+```bash
+cp .env.example .env
+# edit ADMIN_MOBILE and ADMIN_PASSWORD in .env
+make backend
+```
+
+`ADMIN_PASSWORD` is BCrypt hashed before it is stored. The password is never hardcoded in code. If `ADMIN_MOBILE` or `ADMIN_PASSWORD` is missing and no admin exists, bootstrap is skipped with a warning.
+
+Login through:
+
+```http
+POST /api/auth/login
+Content-Type: application/json
+
+{
+  "mobileNumber": "9999999999",
+  "password": "change-this-local-admin-password"
+}
+```
+
+Use the returned JWT in Swagger's **Authorize** button to call `/api/admin/**`.
 
 ## Data Storage Rules
 

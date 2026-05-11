@@ -113,18 +113,18 @@ class SheGoApi {
   final String baseUrl;
   String? token;
 
-  Map<String, String> get headers => {
+  Map<String, String> headersFor([String? tokenOverride]) => {
         'Content-Type': 'application/json',
-        if (token != null) 'Authorization': 'Bearer $token',
+        if ((tokenOverride ?? token) != null) 'Authorization': 'Bearer ${tokenOverride ?? token}',
       };
 
-  Future<dynamic> post(String path, Map<String, dynamic> body) async {
-    final response = await http.post(Uri.parse('$baseUrl$path'), headers: headers, body: jsonEncode(body));
+  Future<dynamic> post(String path, Map<String, dynamic> body, {String? tokenOverride}) async {
+    final response = await http.post(Uri.parse('$baseUrl$path'), headers: headersFor(tokenOverride), body: jsonEncode(body));
     return _decode(response);
   }
 
-  Future<dynamic> get(String path) async {
-    final response = await http.get(Uri.parse('$baseUrl$path'), headers: headers);
+  Future<dynamic> get(String path, {String? tokenOverride}) async {
+    final response = await http.get(Uri.parse('$baseUrl$path'), headers: headersFor(tokenOverride));
     return _decode(response);
   }
 
@@ -138,6 +138,7 @@ class SheGoApi {
 }
 
 final api = SheGoApi();
+String? adminToken;
 
 class HomeShell extends StatefulWidget {
   const HomeShell({super.key});
@@ -586,21 +587,22 @@ class RiderLoginScreen extends StatelessWidget {
   const RiderLoginScreen({super.key});
 
   @override
-  Widget build(BuildContext context) => const LoginForm(title: 'Rider login', path: '/api/riders/login');
+  Widget build(BuildContext context) => const LoginForm(title: 'Rider login', path: '/api/riders/login', forgotPasswordScreen: RiderForgotPasswordScreen());
 }
 
 class DriverLoginScreen extends StatelessWidget {
   const DriverLoginScreen({super.key});
 
   @override
-  Widget build(BuildContext context) => const LoginForm(title: 'Driver login', path: '/api/drivers/login');
+  Widget build(BuildContext context) => const LoginForm(title: 'Driver login', path: '/api/drivers/login', forgotPasswordScreen: DriverForgotPasswordScreen());
 }
 
 class LoginForm extends StatefulWidget {
-  const LoginForm({super.key, required this.title, required this.path});
+  const LoginForm({super.key, required this.title, required this.path, required this.forgotPasswordScreen});
 
   final String title;
   final String path;
+  final Widget forgotPasswordScreen;
 
   @override
   State<LoginForm> createState() => _LoginFormState();
@@ -641,6 +643,127 @@ class _LoginFormState extends State<LoginForm> {
           TextField(controller: password, obscureText: true, decoration: const InputDecoration(labelText: 'Password')),
           const SizedBox(height: 12),
           FilledButton.icon(onPressed: loading ? null : login, icon: const Icon(Icons.login), label: const Text('Login')),
+          TextButton(
+            onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => widget.forgotPasswordScreen)),
+            child: const Text('Forgot password?'),
+          ),
+          if (message != null) Padding(padding: const EdgeInsets.only(top: 12), child: Text(message!)),
+        ],
+      );
+}
+
+class AdminForgotPasswordScreen extends StatelessWidget {
+  const AdminForgotPasswordScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) => const ForgotPasswordScreen(title: 'Admin forgot password', returnTo: 'Admin login');
+}
+
+class RiderForgotPasswordScreen extends StatelessWidget {
+  const RiderForgotPasswordScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) => const ForgotPasswordScreen(title: 'Rider forgot password', returnTo: 'Rider login');
+}
+
+class DriverForgotPasswordScreen extends StatelessWidget {
+  const DriverForgotPasswordScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) => const ForgotPasswordScreen(title: 'Driver forgot password', returnTo: 'Driver login');
+}
+
+class ForgotPasswordScreen extends StatefulWidget {
+  const ForgotPasswordScreen({super.key, required this.title, required this.returnTo});
+
+  final String title;
+  final String returnTo;
+
+  @override
+  State<ForgotPasswordScreen> createState() => _ForgotPasswordScreenState();
+}
+
+class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
+  final identifier = TextEditingController();
+  final otp = TextEditingController();
+  final newPassword = TextEditingController();
+  final confirmPassword = TextEditingController();
+  bool loading = false;
+  String? message;
+  String? devOtp;
+
+  Future<void> sendOtp() async {
+    if (identifier.text.trim().isEmpty) {
+      setState(() => message = 'Registered mobile number is required.');
+      return;
+    }
+    await run(() async {
+      final data = await api.post('/api/auth/forgot-password/send-otp', {'identifier': identifier.text.trim()});
+      devOtp = data is Map ? data['devOtp']?.toString() : null;
+      message = devOtp == null || devOtp!.isEmpty ? 'If the account exists, an OTP has been sent.' : 'Dev OTP: $devOtp';
+    });
+  }
+
+  Future<void> verifyOtp() async {
+    if (identifier.text.trim().isEmpty || otp.text.trim().isEmpty) {
+      setState(() => message = 'Mobile number and OTP are required.');
+      return;
+    }
+    await run(() async {
+      await api.post('/api/auth/forgot-password/verify-otp', {'identifier': identifier.text.trim(), 'otp': otp.text.trim()});
+      message = 'OTP verified. Set a new password.';
+    });
+  }
+
+  Future<void> resetPassword() async {
+    if (newPassword.text != confirmPassword.text) {
+      setState(() => message = 'Passwords do not match.');
+      return;
+    }
+    await run(() async {
+      await api.post('/api/auth/forgot-password/reset', {
+        'identifier': identifier.text.trim(),
+        'otp': otp.text.trim(),
+        'newPassword': newPassword.text,
+      });
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Password reset. Return to ${widget.returnTo}.')));
+      Navigator.of(context).pop();
+    });
+  }
+
+  Future<void> run(Future<void> Function() action) async {
+    setState(() {
+      loading = true;
+      message = null;
+    });
+    try {
+      await action();
+    } catch (e) {
+      message = e.toString();
+    } finally {
+      if (mounted) setState(() => loading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => SignupScaffold(
+        title: widget.title,
+        children: [
+          TextField(controller: identifier, keyboardType: TextInputType.phone, decoration: const InputDecoration(labelText: 'Registered mobile number')),
+          const SizedBox(height: 12),
+          FilledButton.icon(onPressed: loading ? null : sendOtp, icon: const Icon(Icons.sms), label: const Text('Send OTP')),
+          const SizedBox(height: 12),
+          TextField(controller: otp, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'OTP')),
+          const SizedBox(height: 12),
+          OutlinedButton.icon(onPressed: loading ? null : verifyOtp, icon: const Icon(Icons.verified), label: const Text('Verify OTP')),
+          const SizedBox(height: 12),
+          TextField(controller: newPassword, obscureText: true, decoration: const InputDecoration(labelText: 'New password')),
+          const SizedBox(height: 12),
+          TextField(controller: confirmPassword, obscureText: true, decoration: const InputDecoration(labelText: 'Confirm password')),
+          const SizedBox(height: 12),
+          FilledButton.icon(onPressed: loading ? null : resetPassword, icon: const Icon(Icons.lock_reset), label: const Text('Reset password')),
+          if (loading) const Padding(padding: EdgeInsets.only(top: 12), child: LinearProgressIndicator()),
           if (message != null) Padding(padding: const EdgeInsets.only(top: 12), child: Text(message!)),
         ],
       );
@@ -969,14 +1092,40 @@ class AdminScreen extends StatefulWidget {
 class _AdminScreenState extends State<AdminScreen> {
   bool loading = false;
   String? error;
+  String? activePath;
   dynamic result;
 
+  bool get authenticated => adminToken != null;
+
+  void onAdminAuthenticated(String token) {
+    setState(() {
+      adminToken = token;
+      error = null;
+      result = null;
+    });
+    loadDashboard();
+  }
+
+  void logout() {
+    setState(() {
+      adminToken = null;
+      result = null;
+      activePath = null;
+      error = null;
+    });
+  }
+
   Future<void> loadDashboard() async {
+    if (!authenticated) return;
     setState(() => loading = true);
     try {
-      result = await api.get('/api/admin/dashboard');
+      result = await api.get('/api/admin/dashboard', tokenOverride: adminToken);
+      activePath = '/api/admin/dashboard';
       error = null;
     } catch (e) {
+      if (e.toString().contains('Unauthorized') || e.toString().contains('Forbidden') || e.toString().contains('Invalid credentials')) {
+        adminToken = null;
+      }
       error = e.toString();
     } finally {
       setState(() => loading = false);
@@ -984,21 +1133,79 @@ class _AdminScreenState extends State<AdminScreen> {
   }
 
   Future<void> loadPath(String path) async {
+    if (!authenticated) return;
     setState(() => loading = true);
     try {
-      result = await api.get(path);
+      result = await api.get(path, tokenOverride: adminToken);
+      activePath = path;
       error = null;
     } catch (e) {
+      if (e.toString().contains('Unauthorized') || e.toString().contains('Forbidden') || e.toString().contains('Invalid credentials')) {
+        adminToken = null;
+      }
       error = e.toString();
     } finally {
       setState(() => loading = false);
     }
   }
 
+  Future<void> approveDriver(String driverId) async {
+    await adminAction(() => api.post('/api/admin/approve-driver-verification?driverId=$driverId', {}, tokenOverride: adminToken));
+  }
+
+  Future<void> rejectDriver(String driverId) async {
+    final reason = await showDialog<String>(
+      context: context,
+      builder: (context) {
+        final controller = TextEditingController(text: 'Rejected by admin review');
+        return AlertDialog(
+          title: const Text('Reject driver'),
+          content: TextField(controller: controller, decoration: const InputDecoration(labelText: 'Reason')),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+            FilledButton(onPressed: () => Navigator.pop(context, controller.text.trim()), child: const Text('Reject')),
+          ],
+        );
+      },
+    );
+    if (reason == null) return;
+    await adminAction(() => api.post(
+          '/api/admin/reject-driver-verification?driverId=$driverId&reason=${Uri.encodeComponent(reason)}',
+          {},
+          tokenOverride: adminToken,
+        ));
+  }
+
+  Future<void> adminAction(Future<dynamic> Function() action) async {
+    setState(() {
+      loading = true;
+      error = null;
+    });
+    try {
+      await action();
+      await loadPath('/api/admin/pending-driver-kyc');
+    } catch (e) {
+      setState(() => error = e.toString());
+    } finally {
+      if (mounted) setState(() => loading = false);
+    }
+  }
+
   @override
-  Widget build(BuildContext context) => ListView(
+  Widget build(BuildContext context) {
+    if (!authenticated) {
+      return AdminLoginScreen(onAuthenticated: onAdminAuthenticated);
+    }
+    return ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          Row(
+            children: [
+              Expanded(child: Text('Admin dashboard', style: Theme.of(context).textTheme.titleLarge)),
+              TextButton.icon(onPressed: logout, icon: const Icon(Icons.logout), label: const Text('Logout')),
+            ],
+          ),
+          const SizedBox(height: 12),
           Wrap(
             spacing: 8,
             runSpacing: 8,
@@ -1017,7 +1224,7 @@ class _AdminScreenState extends State<AdminScreen> {
               OutlinedButton.icon(
                 onPressed: () => loadPath('/api/admin/pending-driver-kyc'),
                 icon: const Icon(Icons.two_wheeler),
-                label: const Text('Driver KYC'),
+                label: const Text('Pending drivers'),
               ),
             ],
           ),
@@ -1026,8 +1233,133 @@ class _AdminScreenState extends State<AdminScreen> {
             loading: loading,
             error: error,
             empty: result == null,
-            child: Text(const JsonEncoder.withIndent('  ').convert(result)),
+            child: _resultView(),
           ),
+        ],
+      );
+  }
+
+  Widget _resultView() {
+    if (activePath == '/api/admin/pending-driver-kyc' && result is List) {
+      final drivers = result as List;
+      if (drivers.isEmpty) {
+        return const Text('No pending driver verifications.');
+      }
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: drivers.map((item) => _pendingDriverTile(Map<String, dynamic>.from(item as Map))).toList(),
+      );
+    }
+    return Text(const JsonEncoder.withIndent('  ').convert(result));
+  }
+
+  Widget _pendingDriverTile(Map<String, dynamic> driver) {
+    final status = '${driver['kycStatus'] ?? '-'} / ${driver['adminApprovalStatus'] ?? '-'}';
+    final driverId = driver['driverId']?.toString();
+    return Card(
+      margin: const EdgeInsets.only(bottom: 10),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.two_wheeler),
+                const SizedBox(width: 8),
+                Expanded(child: Text(driver['fullName']?.toString() ?? 'Driver', style: Theme.of(context).textTheme.titleMedium)),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text('Mobile: ${driver['mobileNumber'] ?? '-'}'),
+            Text('Gender/Age: ${driver['gender'] ?? '-'} / ${driver['age'] ?? '-'}'),
+            Text('Vehicle: ${driver['vehicleType'] ?? '-'} ${driver['vehicleRegistrationNumber'] ?? ''}'),
+            Text('KYC/Admin: $status'),
+            Text('Admin approved: ${driver['adminApproved'] == true ? 'Yes' : 'No'}'),
+            Text('Available/Online: ${driver['available'] == true ? 'Yes' : 'No'} / ${driver['online'] == true ? 'Yes' : 'No'}'),
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 8,
+              children: [
+                FilledButton.icon(
+                  onPressed: loading || driverId == null ? null : () => approveDriver(driverId),
+                  icon: const Icon(Icons.check),
+                  label: const Text('Approve'),
+                ),
+                OutlinedButton.icon(
+                  onPressed: loading || driverId == null ? null : () => rejectDriver(driverId),
+                  icon: const Icon(Icons.close),
+                  label: const Text('Reject'),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class AdminLoginScreen extends StatefulWidget {
+  const AdminLoginScreen({super.key, required this.onAuthenticated});
+
+  final ValueChanged<String> onAuthenticated;
+
+  @override
+  State<AdminLoginScreen> createState() => _AdminLoginScreenState();
+}
+
+class _AdminLoginScreenState extends State<AdminLoginScreen> {
+  final identifier = TextEditingController();
+  final password = TextEditingController();
+  bool loading = false;
+  String? error;
+
+  Future<void> login() async {
+    if (identifier.text.trim().isEmpty || password.text.trim().isEmpty) {
+      setState(() => error = 'Admin mobile/email and password are required.');
+      return;
+    }
+    setState(() {
+      loading = true;
+      error = null;
+    });
+    try {
+      final data = await api.post('/api/auth/login', {'mobileNumber': identifier.text.trim(), 'password': password.text});
+      final token = data['accessToken']?.toString();
+      if (token == null || token.isEmpty) throw Exception('Access token missing');
+      final me = Map<String, dynamic>.from(await api.get('/api/users/me', tokenOverride: token));
+      final roles = List<dynamic>.from(me['roles'] ?? const []);
+      if (!roles.contains('ADMIN')) {
+        throw Exception('This account is not allowed to access admin dashboard.');
+      }
+      widget.onAuthenticated(token);
+    } catch (e) {
+      setState(() => error = e.toString());
+    } finally {
+      if (mounted) setState(() => loading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          Center(child: ClipOval(child: Image.asset(shegoLogoAsset, width: 118, height: 118, fit: BoxFit.cover))),
+          const SizedBox(height: 16),
+          Text('Admin login', style: Theme.of(context).textTheme.titleLarge),
+          const SizedBox(height: 12),
+          TextField(controller: identifier, keyboardType: TextInputType.emailAddress, decoration: const InputDecoration(labelText: 'Admin mobile number or email')),
+          const SizedBox(height: 12),
+          TextField(controller: password, obscureText: true, decoration: const InputDecoration(labelText: 'Password')),
+          const SizedBox(height: 12),
+          FilledButton.icon(onPressed: loading ? null : login, icon: const Icon(Icons.admin_panel_settings), label: const Text('Login')),
+          TextButton(
+            onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const AdminForgotPasswordScreen())),
+            child: const Text('Forgot password?'),
+          ),
+          if (loading) const Padding(padding: EdgeInsets.only(top: 12), child: LinearProgressIndicator()),
+          if (error != null) Padding(padding: const EdgeInsets.only(top: 12), child: Text(error!, style: const TextStyle(color: Colors.red))),
         ],
       );
 }
