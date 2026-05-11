@@ -1,0 +1,16 @@
+{
+  "name": "shego-test-automation",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "test": "playwright test",
+    "test:api": "playwright test tests/api",
+    "test:e2e": "playwright test tests/e2e",
+    "test:report": "playwright show-report"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.53.0",
+    "dotenv": "^16.4.7",
+    "typescript": "^5.7.3"
+  }
+}

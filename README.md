@@ -55,6 +55,18 @@ make backend-build
 make flutter-apk
 ```
 
+## Test Automation
+
+Playwright API/E2E automation lives in [tests/README.md](tests/README.md).
+
+```bash
+npm install
+npx playwright test
+npx playwright test tests/api
+npx playwright test tests/e2e
+npx playwright show-report
+```
+
 ## Database and Redis
 
 Start PostgreSQL and Redis:
