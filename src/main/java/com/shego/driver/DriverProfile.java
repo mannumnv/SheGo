@@ -50,6 +50,7 @@ public class DriverProfile extends BaseEntity {
 
     private String vehicleRegistrationNumber;
     private String insuranceDetails;
+    private String profilePhotoStorageKey;
     private String selfieStorageKey;
     private String aadhaarStorageKey;
     private String licenseStorageKey;

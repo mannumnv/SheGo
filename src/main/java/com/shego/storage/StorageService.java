@@ -47,6 +47,10 @@ public class StorageService {
 
     public StorageDtos.DownloadIntentResponse downloadIntent(StorageDtos.DownloadIntentRequest request) {
         String key = request.privateStorageKey();
+        return new StorageDtos.DownloadIntentResponse(key, temporaryDownloadUrl(key), 10);
+    }
+
+    public String temporaryDownloadUrl(String key) {
         if (key.contains("..") || key.startsWith("/") || ALLOWED_FOLDERS.stream().noneMatch(folder -> key.startsWith(folder + "/"))) {
             throw new BusinessException("Unsupported storage key");
         }
@@ -58,6 +62,6 @@ public class StorageService {
                 .signatureDuration(Duration.ofMinutes(10))
                 .getObjectRequest(getObjectRequest)
                 .build();
-        return new StorageDtos.DownloadIntentResponse(key, presigner.presignGetObject(presignRequest).url().toString(), 10);
+        return presigner.presignGetObject(presignRequest).url().toString();
     }
 }

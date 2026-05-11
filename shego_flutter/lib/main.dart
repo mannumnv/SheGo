@@ -151,6 +151,7 @@ class _HomeShellState extends State<HomeShell> {
 
   final pages = const [
     AuthScreen(),
+    RideFlowScreen(),
     SafetyScreen(),
     CommuteScreen(),
     ChildRideScreen(),
@@ -177,6 +178,7 @@ class _HomeShellState extends State<HomeShell> {
         onDestinationSelected: (value) => setState(() => index = value),
         destinations: const [
           NavigationDestination(icon: Icon(Icons.person), label: 'Auth'),
+          NavigationDestination(icon: Icon(Icons.two_wheeler), label: 'Ride'),
           NavigationDestination(icon: Icon(Icons.health_and_safety), label: 'Safety'),
           NavigationDestination(icon: Icon(Icons.work_history), label: 'Commute'),
           NavigationDestination(icon: Icon(Icons.child_care), label: 'Child'),
@@ -458,6 +460,7 @@ class _DriverSignupScreenState extends State<DriverSignupScreen> {
   final license = TextEditingController();
   final registration = TextEditingController();
   final insurance = TextEditingController();
+  final profilePhotoKey = TextEditingController();
   final selfieKey = TextEditingController();
   final aadhaarKey = TextEditingController();
   final licenseKey = TextEditingController();
@@ -505,6 +508,7 @@ class _DriverSignupScreenState extends State<DriverSignupScreen> {
         'vehicleType': vehicleType,
         'vehicleRegistrationNumber': registration.text.trim(),
         'insuranceDetails': insurance.text.trim(),
+        'profilePhotoStorageKey': emptyToNull(profilePhotoKey.text),
         'selfieStorageKey': emptyToNull(selfieKey.text),
         'aadhaarStorageKey': emptyToNull(aadhaarKey.text),
         'licenseStorageKey': emptyToNull(licenseKey.text),
@@ -559,6 +563,8 @@ class _DriverSignupScreenState extends State<DriverSignupScreen> {
           TextField(controller: registration, decoration: const InputDecoration(labelText: 'Vehicle registration number')),
           const SizedBox(height: 12),
           TextField(controller: insurance, decoration: const InputDecoration(labelText: 'Insurance details')),
+          const SizedBox(height: 12),
+          TextField(controller: profilePhotoKey, decoration: const InputDecoration(labelText: 'Profile photo storage key (optional)')),
           const SizedBox(height: 12),
           TextField(controller: aadhaarKey, decoration: const InputDecoration(labelText: 'Aadhaar document storage key (optional)')),
           const SizedBox(height: 12),
@@ -685,6 +691,93 @@ int? calculateAge(String value) {
 }
 
 String? emptyToNull(String value) => value.trim().isEmpty ? null : value.trim();
+
+class RideFlowScreen extends StatefulWidget {
+  const RideFlowScreen({super.key});
+
+  @override
+  State<RideFlowScreen> createState() => _RideFlowScreenState();
+}
+
+class _RideFlowScreenState extends State<RideFlowScreen> {
+  final rideId = TextEditingController();
+  final otp = TextEditingController();
+  String vehicleType = 'SCOOTY';
+  bool loading = false;
+  String? error;
+  dynamic result;
+
+  Future<void> run(Future<dynamic> Function() action) async {
+    setState(() {
+      loading = true;
+      error = null;
+    });
+    try {
+      result = await action();
+      if (result is Map && result['id'] != null) rideId.text = result['id'].toString();
+      if (result is Map && result['rideId'] != null) rideId.text = result['rideId'].toString();
+    } catch (e) {
+      error = e.toString();
+    } finally {
+      setState(() => loading = false);
+    }
+  }
+
+  String get id => rideId.text.trim();
+
+  Future<void> book() => run(() => api.post('/api/rides/book', {
+        'vehicleType': vehicleType,
+        'pickupLat': 28.6139,
+        'pickupLng': 77.2090,
+        'dropLat': 28.5355,
+        'dropLng': 77.3910,
+        'pickupAddress': 'Connaught Place',
+        'dropAddress': 'Noida Sector 18',
+      }));
+
+  Future<void> accept() => run(() => api.post('/api/rides/$id/accept', {}));
+  Future<void> arrive() => run(() => api.post('/api/rides/$id/arrive', {}));
+  Future<void> start() => run(() => api.post('/api/rides/$id/start', {'otp': otp.text.trim()}));
+  Future<void> load() => run(() => api.get('/api/rides/$id'));
+
+  @override
+  Widget build(BuildContext context) => ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          Text('Ride booking and OTP flow', style: Theme.of(context).textTheme.titleLarge),
+          const SizedBox(height: 12),
+          DropdownButtonFormField<String>(
+            initialValue: vehicleType,
+            decoration: const InputDecoration(labelText: 'Ride vehicle type'),
+            items: const ['SCOOTY', 'BIKE'].map((item) => DropdownMenuItem(value: item, child: Text(item))).toList(),
+            onChanged: (value) => setState(() => vehicleType = value ?? vehicleType),
+          ),
+          const SizedBox(height: 12),
+          TextField(controller: rideId, decoration: const InputDecoration(labelText: 'Ride ID')),
+          const SizedBox(height: 12),
+          TextField(controller: otp, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Ride start OTP')),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              FilledButton.icon(onPressed: loading ? null : book, icon: const Icon(Icons.add_location_alt), label: const Text('Book')),
+              OutlinedButton.icon(onPressed: loading || id.isEmpty ? null : accept, icon: const Icon(Icons.check), label: const Text('Accept')),
+              OutlinedButton.icon(onPressed: loading || id.isEmpty ? null : arrive, icon: const Icon(Icons.pin_drop), label: const Text('Arrived')),
+              FilledButton.tonalIcon(onPressed: loading || id.isEmpty ? null : start, icon: const Icon(Icons.password), label: const Text('Start with OTP')),
+              OutlinedButton.icon(onPressed: loading || id.isEmpty ? null : load, icon: const Icon(Icons.refresh), label: const Text('Load details')),
+            ],
+          ),
+          const SizedBox(height: 16),
+          AsyncPanel(
+            loading: loading,
+            error: error,
+            empty: result == null,
+            child: Text(const JsonEncoder.withIndent('  ').convert(result)),
+          ),
+        ],
+      );
+}
 
 class SafetyScreen extends StatefulWidget {
   const SafetyScreen({super.key});

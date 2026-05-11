@@ -80,6 +80,7 @@ public class DriverService {
         driver.setVehicleType(request.vehicleType());
         driver.setVehicleRegistrationNumber(request.vehicleRegistrationNumber());
         driver.setInsuranceDetails(request.insuranceDetails());
+        driver.setProfilePhotoStorageKey(request.profilePhotoStorageKey());
         driver.setSelfieStorageKey(request.selfieStorageKey());
         driver.setAadhaarStorageKey(request.aadhaarStorageKey());
         driver.setLicenseStorageKey(request.licenseStorageKey());
@@ -110,6 +111,7 @@ public class DriverService {
         DriverProfile driver = driverFor(user);
         driver.setAadhaarEncrypted(request.aadhaarNumber());
         driver.setAadhaarLast4(last4(request.aadhaarNumber()));
+        driver.setProfilePhotoStorageKey(request.profilePhotoStorageKey());
         driver.setSelfieStorageKey(request.selfieStorageKey());
         driver.setAadhaarStorageKey(request.aadhaarStorageKey());
         driver.setLicenseStorageKey(request.licenseStorageKey());

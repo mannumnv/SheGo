@@ -237,6 +237,22 @@ Content-Type: application/json
 
 Start ride:
 
+Driver marks pickup arrival first:
+
+```http
+POST /api/rides/{rideId}/arrive
+Authorization: Bearer <driver-token>
+```
+
+Rider loads ride details and sees `startOtp` only after `DRIVER_REACHED`:
+
+```http
+GET /api/rides/{rideId}
+Authorization: Bearer <rider-token>
+```
+
+Driver starts ride with rider-shared OTP:
+
 ```http
 POST /api/rides/{rideId}/start
 Authorization: Bearer <driver-token>
@@ -287,6 +303,9 @@ Content-Type: application/json
 - Only KYC-approved, active, admin-approved drivers can go online or accept rides.
 - A driver cannot accept more than one active ride.
 - Ride start requires OTP.
+- Driver must mark arrival before ride start; only the assigned driver can submit the OTP.
+- Ride start OTP hash is stored in PostgreSQL, while the temporary rider-visible OTP lives in Redis until expiry.
+- Accepted ride details share only safe participant data: names, contact numbers, temporary profile photo URLs, vehicle details, pickup/drop, ETA, and ride status.
 - Guardian mode auto-enables between 10 PM and 5 AM India time.
 - SOS can be created with or without a ride.
 - Safety score recalculates after ride completion.
@@ -304,6 +323,17 @@ Child safe ride, subscriptions, office/college commute passes, corporate transpo
 
 Phase 4:
 Women delivery network, wearable SOS, voice trigger, fraud detection, driver behavior telemetry, AI-assisted safety operations.
+
+## Documentation
+
+Future implementation must follow these project-specific docs:
+
+- [Architecture](docs/ARCHITECTURE.md)
+- [Database Rules](docs/DB_RULES.md)
+- [KYC Rules](docs/KYC_RULES.md)
+- [Security Rules](docs/SECURITY_RULES.md)
+- [AWS Deployment Guide](docs/AWS_DEPLOYMENT_GUIDE.md)
+- [Play Store and User Release Guide](docs/PLAYSTORE_AND_USER_RELEASE_GUIDE.md)
 
 ## AWS Deployment
 

@@ -53,7 +53,10 @@ public class Ride extends BaseEntity {
     private BigDecimal finalFare;
     private String vehicleRegistrationSnapshot;
     private String vehicleModelSnapshot;
-    private String startOtp;
+    @Column(name = "start_otp")
+    private String startOtpHash;
+    private Instant startOtpExpiresAt;
+    private int startOtpRetryCount;
     private String completionOtp;
     private boolean guardianModeEnabled;
     private boolean lateNight;

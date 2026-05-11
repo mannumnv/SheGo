@@ -34,8 +34,8 @@ public class RideController {
     }
 
     @PostMapping("/{id}/accept")
-    ApiResponse<RideDtos.RideResponse> accept(@PathVariable UUID id) {
-        return ApiResponse.ok("Ride accepted", RideDtos.RideResponse.from(rideService.accept(currentUserService.current(), id)));
+    ApiResponse<RideDtos.RideAcceptedResponse> accept(@PathVariable UUID id) {
+        return ApiResponse.ok("Ride accepted", rideService.acceptedResponse(rideService.accept(currentUserService.current(), id)));
     }
 
     @PostMapping("/{id}/reject")
@@ -43,9 +43,15 @@ public class RideController {
         return ApiResponse.ok("Ride rejected", RideDtos.RideResponse.from(rideService.reject(currentUserService.current(), id)));
     }
 
+    @PostMapping("/{id}/arrive")
+    ApiResponse<RideDtos.RideDetailsResponse> arrive(@PathVariable UUID id) {
+        return ApiResponse.ok("Driver reached pickup", rideService.details(currentUserService.current(),
+                rideService.arrive(currentUserService.current(), id).getId()));
+    }
+
     @PostMapping("/{id}/start")
-    ApiResponse<RideDtos.RideResponse> start(@PathVariable UUID id, @RequestBody RideDtos.OtpRequest request) {
-        return ApiResponse.ok("Ride started", RideDtos.RideResponse.from(rideService.start(id, request.otp())));
+    ApiResponse<RideDtos.RideStartResponse> start(@PathVariable UUID id, @RequestBody RideDtos.RideStartOtpRequest request) {
+        return ApiResponse.ok("Ride started", rideService.start(currentUserService.current(), id, request.otp()));
     }
 
     @PostMapping("/{id}/complete")
@@ -59,8 +65,8 @@ public class RideController {
     }
 
     @GetMapping("/{id}")
-    ApiResponse<RideDtos.RideResponse> get(@PathVariable UUID id) {
-        return ApiResponse.ok("Ride", RideDtos.RideResponse.from(rideService.get(id)));
+    ApiResponse<RideDtos.RideDetailsResponse> get(@PathVariable UUID id) {
+        return ApiResponse.ok("Ride", rideService.details(currentUserService.current(), id));
     }
 
     @GetMapping("/history")

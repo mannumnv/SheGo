@@ -15,16 +15,16 @@ public class DriverDtos {
                                 @NotNull Gender gender, @NotNull LocalDate dateOfBirth, @NotBlank String address,
                                 @NotBlank String drivingLicenseNumber, @NotNull VehicleType vehicleType,
                                 @NotBlank String vehicleRegistrationNumber, @NotBlank String insuranceDetails,
-                                String aadhaarNumber, String selfieStorageKey, String aadhaarStorageKey,
-                                String licenseStorageKey, String vehicleDocumentStorageKey,
+                                String aadhaarNumber, String profilePhotoStorageKey, String selfieStorageKey,
+                                String aadhaarStorageKey, String licenseStorageKey, String vehicleDocumentStorageKey,
                                 String insuranceDocumentStorageKey) {
     }
 
     public record LoginRequest(@NotBlank String mobileNumber, @NotBlank String password) {
     }
 
-    public record UploadKycRequest(String aadhaarNumber, String selfieStorageKey, String aadhaarStorageKey,
-                                   String licenseStorageKey, String vehicleDocumentStorageKey,
+    public record UploadKycRequest(String aadhaarNumber, String profilePhotoStorageKey, String selfieStorageKey,
+                                   String aadhaarStorageKey, String licenseStorageKey, String vehicleDocumentStorageKey,
                                    String insuranceDocumentStorageKey) {
     }
 

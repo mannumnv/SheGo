@@ -10,7 +10,7 @@ import com.shego.driver.DriverProfileRepository;
 import com.shego.driver.DriverService;
 import com.shego.rider.RiderDtos;
 import com.shego.rider.RiderProfileRepository;
-import com.shego.ride.Ride;
+import com.shego.ride.RideDtos;
 import com.shego.ride.RideService;
 import com.shego.sos.SosService;
 import com.shego.user.CurrentUserService;
@@ -91,8 +91,8 @@ public class AdminController {
     }
 
     @GetMapping("/rides/active")
-    ApiResponse<java.util.List<Ride>> activeRides() {
-        return ApiResponse.ok("Active rides", rides.active());
+    ApiResponse<java.util.List<RideDtos.RideResponse>> activeRides() {
+        return ApiResponse.ok("Active rides", rides.active().stream().map(RideDtos.RideResponse::from).toList());
     }
 
     @GetMapping("/reports")

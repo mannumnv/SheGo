@@ -12,14 +12,19 @@ import com.shego.payment.DriverEarningRepository;
 import com.shego.rider.RiderProfile;
 import com.shego.rider.RiderProfileRepository;
 import com.shego.safety.SafetyScoreService;
+import com.shego.storage.StorageService;
 import com.shego.user.User;
 import com.shego.vehicle.Vehicle;
 import com.shego.vehicle.VehicleRepository;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.security.SecureRandom;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalTime;
 import java.time.ZoneId;
@@ -28,7 +33,9 @@ import java.util.UUID;
 
 @Service
 public class RideService {
-    private static final List<RideStatus> ACTIVE = List.of(RideStatus.REQUESTED, RideStatus.ACCEPTED, RideStatus.DRIVER_ARRIVING, RideStatus.STARTED);
+    private static final List<RideStatus> ACTIVE = List.of(RideStatus.REQUESTED, RideStatus.ACCEPTED, RideStatus.DRIVER_REACHED, RideStatus.DRIVER_ARRIVING, RideStatus.STARTED);
+    private static final int START_OTP_MAX_RETRIES = 5;
+    private static final Duration START_OTP_TTL = Duration.ofMinutes(10);
     private final RideRepository rides;
     private final RiderProfileRepository riders;
     private final DriverProfileRepository drivers;
@@ -36,10 +43,15 @@ public class RideService {
     private final DriverEarningRepository earnings;
     private final NotificationService notifications;
     private final VehicleRepository vehicles;
+    private final PasswordEncoder passwordEncoder;
+    private final StringRedisTemplate redis;
+    private final StorageService storage;
+    private final SecureRandom random = new SecureRandom();
 
     public RideService(RideRepository rides, RiderProfileRepository riders, DriverProfileRepository drivers,
                        SafetyScoreService safetyScoreService, DriverEarningRepository earnings,
-                       NotificationService notifications, VehicleRepository vehicles) {
+                       NotificationService notifications, VehicleRepository vehicles, PasswordEncoder passwordEncoder,
+                       StringRedisTemplate redis, StorageService storage) {
         this.rides = rides;
         this.riders = riders;
         this.drivers = drivers;
@@ -47,6 +59,9 @@ public class RideService {
         this.earnings = earnings;
         this.notifications = notifications;
         this.vehicles = vehicles;
+        this.passwordEncoder = passwordEncoder;
+        this.redis = redis;
+        this.storage = storage;
     }
 
     public RideDtos.EstimateResponse estimate(RideDtos.EstimateRequest request) {
@@ -73,11 +88,28 @@ public class RideService {
         ride.setDistanceKm(estimate.distanceKm());
         ride.setEtaMinutes(estimate.etaMinutes());
         ride.setEstimatedFare(estimate.estimatedFare());
-        ride.setStartOtp(String.valueOf((int) (Math.random() * 9000) + 1000));
         ride.setLateNight(isLateNight());
         ride.setGuardianModeEnabled(ride.isLateNight());
         Ride saved = rides.save(ride);
         notifications.create(user, "PUSH", "Ride requested", "Your SheGo ride request has been created.");
+        return saved;
+    }
+
+    @Transactional
+    public Ride arrive(User user, UUID rideId) {
+        Ride ride = assignedRideForDriver(user, rideId);
+        if (ride.getStatus() != RideStatus.ACCEPTED && ride.getStatus() != RideStatus.DRIVER_ARRIVING) {
+            throw new BusinessException("Ride must be accepted before marking arrival");
+        }
+        String otp = String.valueOf(1000 + random.nextInt(9000));
+        ride.setStatus(RideStatus.DRIVER_REACHED);
+        ride.setDriverReachedAt(Instant.now());
+        ride.setStartOtpHash(passwordEncoder.encode(otp));
+        ride.setStartOtpExpiresAt(ride.getDriverReachedAt().plus(START_OTP_TTL));
+        ride.setStartOtpRetryCount(0);
+        redis.opsForValue().set(startOtpKey(ride.getId()), otp, START_OTP_TTL);
+        Ride saved = rides.save(ride);
+        notifications.create(ride.getRider().getUser(), "PUSH", "Driver reached pickup", "Your ride start OTP is now available in the SheGo app.");
         return saved;
     }
 
@@ -118,18 +150,29 @@ public class RideService {
         return ride;
     }
 
-    public Ride start(UUID rideId, String otp) {
-        Ride ride = rides.findById(rideId).orElseThrow();
-        if (ride.getStatus() != RideStatus.ACCEPTED && ride.getStatus() != RideStatus.DRIVER_ARRIVING) {
-            throw new BusinessException("Ride must be accepted before it can start");
+    public RideDtos.RideStartResponse start(User user, UUID rideId, String otp) {
+        Ride ride = assignedRideForDriver(user, rideId);
+        if (ride.getStatus() != RideStatus.DRIVER_REACHED) {
+            throw new BusinessException("Driver must mark arrival before ride can start");
         }
-        if (!ride.getStartOtp().equals(otp)) throw new BusinessException("Invalid ride start OTP");
+        if (ride.getStartOtpExpiresAt() == null || ride.getStartOtpExpiresAt().isBefore(Instant.now())) {
+            throw new BusinessException("Ride start OTP has expired. Mark arrival again to generate a new OTP.");
+        }
+        if (ride.getStartOtpRetryCount() >= START_OTP_MAX_RETRIES) {
+            throw new BusinessException("Ride start OTP retry limit exceeded.");
+        }
+        if (otp == null || !passwordEncoder.matches(otp, ride.getStartOtpHash())) {
+            ride.setStartOtpRetryCount(ride.getStartOtpRetryCount() + 1);
+            rides.save(ride);
+            throw new BusinessException("Invalid ride start OTP");
+        }
         ride.setStatus(RideStatus.STARTED);
         ride.setStartedAt(Instant.now());
         ride.setRiderBoardedAt(ride.getStartedAt());
         Ride saved = rides.save(ride);
+        redis.delete(startOtpKey(ride.getId()));
         notifications.create(ride.getRider().getUser(), "PUSH", "Ride started", "Your SheGo ride has started.");
-        return saved;
+        return new RideDtos.RideStartResponse(saved.getId(), saved.getStatus(), saved.getStartedAt());
     }
 
     @Transactional
@@ -182,6 +225,20 @@ public class RideService {
         return rides.findById(id).orElseThrow();
     }
 
+    public RideDtos.RideDetailsResponse details(User user, UUID id) {
+        Ride ride = get(id);
+        boolean rider = ride.getRider().getUser().getId().equals(user.getId());
+        boolean driver = ride.getDriver() != null && ride.getDriver().getUser().getId().equals(user.getId());
+        if (!rider && !driver && user.getAuthorities().stream().noneMatch(a -> a.getAuthority().equals("ROLE_ADMIN") || a.getAuthority().equals("ROLE_SUPPORT"))) {
+            throw new BusinessException("Ride not found for current user");
+        }
+        return details(ride, rider, driver);
+    }
+
+    public RideDtos.RideAcceptedResponse acceptedResponse(Ride ride) {
+        return new RideDtos.RideAcceptedResponse(ride.getId(), ride.getStatus(), details(ride, true, false), details(ride, false, true));
+    }
+
     public List<Ride> history(User user) {
         RiderProfile rider = riders.findByUser(user).orElseThrow(() -> new BusinessException("Rider profile not found"));
         return rides.findByRiderOrderByCreatedAtDesc(rider);
@@ -189,6 +246,52 @@ public class RideService {
 
     public List<Ride> active() {
         return rides.findByStatusIn(ACTIVE);
+    }
+
+    private Ride assignedRideForDriver(User user, UUID rideId) {
+        DriverProfile driver = drivers.findByUser(user).orElseThrow(() -> new BusinessException("Driver profile not found"));
+        Ride ride = rides.findById(rideId).orElseThrow();
+        if (ride.getDriver() == null || !ride.getDriver().getId().equals(driver.getId())) {
+            throw new BusinessException("Only assigned driver can update this ride");
+        }
+        return ride;
+    }
+
+    private RideDtos.RideDetailsResponse details(Ride ride, boolean forRider, boolean forDriver) {
+        DriverProfile driver = ride.getDriver();
+        Vehicle vehicle = ride.getVehicle();
+        RiderProfile rider = ride.getRider();
+        RideDtos.ParticipantDriverDetails driverDetails = driver == null ? null : new RideDtos.ParticipantDriverDetails(
+                driver.getUser().getFullName(),
+                driver.getUser().getMobileNumber(),
+                temporaryUrl(driver.getProfilePhotoStorageKey()),
+                vehicle == null ? ride.getVehicleType() : vehicle.getVehicleType(),
+                ride.getVehicleRegistrationSnapshot(),
+                ride.getVehicleModelSnapshot()
+        );
+        RideDtos.ParticipantRiderDetails riderDetails = forDriver ? new RideDtos.ParticipantRiderDetails(
+                rider.getUser().getFullName(),
+                rider.getUser().getMobileNumber(),
+                temporaryUrl(rider.getProfilePhotoStorageKey())
+        ) : null;
+        String otp = forRider && ride.getStatus() == RideStatus.DRIVER_REACHED ? redis.opsForValue().get(startOtpKey(ride.getId())) : null;
+        return new RideDtos.RideDetailsResponse(ride.getId(), ride.getStatus(), ride.getVehicleType(), rider.getId(),
+                driver == null ? null : driver.getId(), vehicle == null ? null : vehicle.getId(),
+                forRider ? driverDetails : null, riderDetails, ride.getPickupAddress(), ride.getDropAddress(),
+                ride.getPickupLat(), ride.getPickupLng(), ride.getDropLat(), ride.getDropLng(), ride.getEtaMinutes(),
+                ride.isGuardianModeEnabled(), ride.isLateNight(), otp, ride.getStartOtpExpiresAt(),
+                ride.getAcceptedAt(), ride.getDriverReachedAt(), ride.getStartedAt());
+    }
+
+    private String temporaryUrl(String key) {
+        if (key == null || key.isBlank()) {
+            return null;
+        }
+        return storage.temporaryDownloadUrl(key);
+    }
+
+    private String startOtpKey(UUID rideId) {
+        return "ride:start-otp:" + rideId;
     }
 
     private boolean isLateNight() {
