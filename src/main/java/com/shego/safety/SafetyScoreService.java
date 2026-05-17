@@ -6,6 +6,7 @@ import com.shego.driver.DriverProfileRepository;
 import com.shego.exception.BusinessException;
 import com.shego.ride.RideRepository;
 import com.shego.user.User;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
 import java.util.UUID;
@@ -25,14 +26,16 @@ public class SafetyScoreService {
     }
 
     public SafetyScore get(UUID driverId) {
-        DriverProfile driver = drivers.findById(driverId).orElseThrow();
+        DriverProfile driver = drivers.findById(driverId)
+                .orElseThrow(() -> new BusinessException("Driver not found", HttpStatus.NOT_FOUND));
         return scores.findByDriver(driver).orElseGet(() -> recalculate(driver));
     }
 
     public SafetyEvent event(User actor, SafetyDtos.EventRequest request) {
         SafetyEvent event = new SafetyEvent();
         event.setActor(actor);
-        event.setRide(request.rideId() == null ? null : rides.findById(request.rideId()).orElseThrow());
+        event.setRide(request.rideId() == null ? null : rides.findById(request.rideId())
+                .orElseThrow(() -> new BusinessException("Ride not found", HttpStatus.NOT_FOUND)));
         event.setEventType(request.eventType());
         event.setSeverity(request.severity());
         event.setDetails(request.details());

@@ -3,11 +3,14 @@ package com.shego.rider;
 import com.shego.auth.AuthDtos;
 import com.shego.common.EligibilityValidationService;
 import com.shego.common.KycStatus;
+import com.shego.common.NotificationType;
 import com.shego.common.Role;
 import com.shego.config.JwtService;
 import com.shego.exception.BusinessException;
+import com.shego.notification.NotificationService;
 import com.shego.user.User;
 import com.shego.user.UserRepository;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -24,16 +27,18 @@ public class RiderService {
     private final AuthenticationManager authenticationManager;
     private final JwtService jwtService;
     private final EligibilityValidationService eligibility;
+    private final NotificationService notifications;
 
     public RiderService(UserRepository users, RiderProfileRepository riders, PasswordEncoder passwordEncoder,
                         AuthenticationManager authenticationManager, JwtService jwtService,
-                        EligibilityValidationService eligibility) {
+                        EligibilityValidationService eligibility, NotificationService notifications) {
         this.users = users;
         this.riders = riders;
         this.passwordEncoder = passwordEncoder;
         this.authenticationManager = authenticationManager;
         this.jwtService = jwtService;
         this.eligibility = eligibility;
+        this.notifications = notifications;
     }
 
     @Transactional
@@ -73,13 +78,26 @@ public class RiderService {
         profile.setRiderAadhaarLast4(last4(request.riderAadhaarNumber()));
         profile.setGuardianConsent(request.guardianConsent());
         profile.setKycStatus(result.verificationType() == null ? KycStatus.PENDING : KycStatus.PENDING);
-        riders.save(profile);
+        RiderProfile savedProfile = riders.save(profile);
+        notifications.create(saved, Role.RIDER, NotificationType.PROFILE,
+                "Complete your rider profile",
+                "Add emergency contact, guardian details if needed, and payment setup for a smoother ride.",
+                "RiderProfile", savedProfile.getId().toString(), "rider-profile",
+                "rider-profile:" + savedProfile.getId());
+        if (saved.getAccountStatus() != com.shego.common.AccountStatus.ACTIVE) {
+            notifications.createForRole(Role.ADMIN, NotificationType.ACTION_REQUIRED,
+                    "New rider signup pending review",
+                    saved.getFullName() + " requires rider verification review.",
+                    "RiderProfile", savedProfile.getId().toString(), "admin-rider-verification",
+                    "admin-rider-signup:" + savedProfile.getId());
+        }
         return tokens(saved);
     }
 
     public AuthDtos.AuthResponse login(RiderDtos.LoginRequest request) {
         authenticationManager.authenticate(new UsernamePasswordAuthenticationToken(request.mobileNumber(), request.password()));
-        User user = users.findByMobileNumber(request.mobileNumber()).orElseThrow();
+        User user = users.findByMobileNumber(request.mobileNumber())
+                .orElseThrow(() -> new BusinessException("Invalid credentials"));
         if (!user.getRoles().contains(Role.RIDER)) {
             throw new BusinessException("Rider account not found");
         }
@@ -87,7 +105,8 @@ public class RiderService {
     }
 
     public RiderProfile profile(User user) {
-        return riders.findByUser(user).orElseThrow(() -> new BusinessException("Rider profile not found"));
+        return riders.findByUser(user)
+                .orElseThrow(() -> new BusinessException("Rider profile not found", HttpStatus.FORBIDDEN));
     }
 
     public RiderProfile verifyGuardian(User user, RiderDtos.GuardianVerificationRequest request) {
@@ -97,6 +116,12 @@ public class RiderService {
         profile.setGuardianMobileNumber(request.guardianMobileNumber());
         profile.setGuardianRelationship(request.guardianRelationship());
         profile.setGuardianConsent(request.guardianConsent());
+        return riders.save(profile);
+    }
+
+    public RiderProfile active(User user, RiderDtos.ActiveRequest request) {
+        RiderProfile profile = profile(user);
+        profile.setActive(request.active());
         return riders.save(profile);
     }
 

@@ -2,8 +2,10 @@ package com.shego.complaint;
 
 import com.shego.common.ApiResponse;
 import com.shego.common.ComplaintStatus;
+import com.shego.exception.BusinessException;
 import com.shego.ride.RideRepository;
 import com.shego.user.CurrentUserService;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -30,7 +32,8 @@ public class ComplaintController {
     ApiResponse<Complaint> create(@RequestBody ComplaintDtos.ComplaintRequest request) {
         Complaint complaint = new Complaint();
         complaint.setRaisedBy(currentUserService.current());
-        complaint.setRide(request.rideId() == null ? null : rides.findById(request.rideId()).orElseThrow());
+        complaint.setRide(request.rideId() == null ? null : rides.findById(request.rideId())
+                .orElseThrow(() -> new BusinessException("Ride not found", HttpStatus.NOT_FOUND)));
         complaint.setCategory(request.category());
         complaint.setDescription(request.description());
         return ApiResponse.ok("Complaint raised", complaints.save(complaint));
@@ -50,7 +53,8 @@ public class ComplaintController {
     @PreAuthorize("hasAnyRole('ADMIN','SUPPORT')")
     @PostMapping("/api/admin/complaints/{id}/resolve")
     ApiResponse<Complaint> resolve(@PathVariable UUID id, @RequestBody ComplaintDtos.ResolveRequest request) {
-        Complaint complaint = complaints.findById(id).orElseThrow();
+        Complaint complaint = complaints.findById(id)
+                .orElseThrow(() -> new BusinessException("Complaint not found", HttpStatus.NOT_FOUND));
         complaint.setStatus(ComplaintStatus.RESOLVED);
         complaint.setResolution(request.resolution());
         return ApiResponse.ok("Complaint resolved", complaints.save(complaint));

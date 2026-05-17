@@ -546,3 +546,245 @@ POST /api/admin/kyc/{id}/approve
 This approves the KycDocument, but profile-level approval is separate.
 
 So short version: uploaded KYC docs can be approved individually, but rider/driver account activation currently happens through admin profile approval APIs.
+
+----
+Security reason: forgot password API public hoti hai, isliye backend directly nahi batata ki mobile number exist karta hai ya nahi. Warna koi bhi random mobile numbers try karke users discover kar sakta hai.
+
+Rider account exist hai ya nahi check karne ke safe ways:
+
+Option 1: Admin API se check karo
+
+Admin login token lo, then:
+
+GET /api/admin/users
+Authorization: Bearer <admin_token>
+
+
+Response me mobileNumber search karo.
+
+Option 2: Database query
+
+select
+  u.id as user_id,
+  u.full_name,
+  u.mobile_number,
+  u.account_status,
+  ur.roles,
+  rp.id as rider_id,
+  rp.kyc_status
+from users u
+left join user_roles ur on ur.user_id = u.id
+left join rider_profile rp on rp.user_id = u.id
+where u.mobile_number = 'RIDER_MOBILE_NUMBER';
+
+
+Agar row milti hai and roles = RIDER, then rider account exists.
+
+Option 3: Rider login try karo
+
+POST /api/riders/login
+Content-Type: application/json
+
+{
+  "mobileNumber": "RIDER_MOBILE_NUMBER",
+  "password": "password"
+}
+
+# password yaad nahi h usi k liye to ye msg aa rhe jb reset krne k try kr rhe toIf the account exists, an OTP has been sent.
+
+Haan bhai, wahi reset flow ka safe public message hai. Password yaad nahi hai to local/dev me OTP check karne ke 3 practical tareeke hain:
+
+1. Backend console log dekho
+
+Agar app local ya dev profile me chal raha hai, forgot-password OTP backend console me log/return ho sakta hai. Request:
+
+POST /api/auth/forgot-password/send-otp
+{
+  "identifier": "rider_mobile_number"
+}
+
+Console me OTP search karo.
+
+2. API response me devOtp dekho
+
+Local/dev profile me response data.devOtp aa sakta hai:
+
+{
+  "success": true,
+  "message": "If the account exists, an OTP has been sent.",
+  "data": {
+    "devOtp": "123456"
+  }
+}
+
+Agar devOtp null/missing hai, profile probably local/dev nahi hai ya account nahi mila.
+
+3. Local/dev emergency reset endpoint use karo
+
+Ye sabse easy hai agar password bhool gaye ho:
+POST /api/dev/users/reset-password
+Content-Type: application/json
+
+{
+  "mobileNumber": "rider_mobile_number",
+  "newPassword": "NewPassword123"
+}
+
+Important:
+
+Ye endpoint sirf local/dev profile me enabled hai.
+Production me nahi hona chahiye.
+Password BCrypt hash hoke save hoga.
+Uske baad rider login karo:
+
+POST /api/riders/login
+{
+  "mobileNumber": "rider_mobile_number",
+  "password": "NewPassword123"
+}
+Agar /api/dev/users/reset-password 404 de raha hai, backend local/dev profile me nahi chal raha. Then app start karo local profile ke saath.
+
+---
+
+## Phase 2 MVP+ Location, Directions, and Payment APIs
+
+These APIs are part of the Phase 2 foundation. They are designed to work locally without paid Google Maps or payment provider credentials.
+
+### Directions / Route Estimate
+
+```http
+POST /api/directions/route
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "pickupLat": 28.6139,
+  "pickupLng": 77.2090,
+  "dropLat": 28.5355,
+  "dropLng": 77.3910,
+  "pickupAddress": "Connaught Place",
+  "dropAddress": "Noida Sector 18"
+}
+```
+
+Local/dev behavior:
+
+- If `GOOGLE_MAPS_API_KEY` is empty, provider is `LOCAL_MOCK`.
+- If the key is configured, the adapter reports `GOOGLE_DIRECTIONS_READY`; full paid Google Directions wiring is still isolated behind the `DirectionsService` abstraction.
+
+### Saved Locations
+
+```http
+GET /api/locations/saved
+Authorization: Bearer <token>
+```
+
+```http
+POST /api/locations/saved
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "type": "HOME",
+  "label": "Home",
+  "address": "Sector 18 Noida",
+  "latitude": 28.5355,
+  "longitude": 77.3910
+}
+```
+
+Allowed `type` values:
+
+- `HOME`
+- `WORK`
+- `COLLEGE`
+- `METRO`
+- `OTHER`
+
+### Recent Location Searches
+
+```http
+GET /api/locations/recent
+Authorization: Bearer <token>
+```
+
+```http
+POST /api/locations/recent
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "queryText": "Connaught Place to Noida Sector 18",
+  "address": "Noida Sector 18",
+  "latitude": 28.5355,
+  "longitude": 77.3910
+}
+```
+
+### Ride Route Snapshot
+
+When a rider books a ride, backend now stores a route snapshot in PostgreSQL.
+
+```http
+GET /api/rides/{rideId}/route-snapshot
+Authorization: Bearer <token>
+```
+
+### Payment Initiation
+
+```http
+POST /api/payments/initiate
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "rideId": "ride-profile-uuid",
+  "amount": 0,
+  "method": "CASH"
+}
+```
+
+Supported MVP payment methods:
+
+- `CASH`
+- `UPI`
+- `RAZORPAY`
+- `PHONEPE`
+- `PAYTM`
+- `DEBIT_CARD`
+- `ONLINE`
+- `WALLET`
+
+Payment states now support:
+
+- `PENDING`
+- `PROCESSING`
+- `PAID`
+- `FAILED`
+- `REFUNDED`
+- legacy-compatible `INITIATED`
+- legacy-compatible `CONFIRMED`
+
+### Confirm Payment
+
+```http
+POST /api/payments/confirm
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "paymentId": "payment-uuid",
+  "providerReference": "cash-confirmed"
+}
+```
+
+Confirmation moves the payment to `PAID`.
+
+### Ride Invoice / Receipt
+
+```http
+GET /api/payments/ride/{rideId}/invoice
+Authorization: Bearer <token>
+```
+
+This currently returns an MVP receipt payload. PDF generation remains behind the future invoice adapter.

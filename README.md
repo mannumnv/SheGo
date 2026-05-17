@@ -13,6 +13,7 @@ SheGo is a women-only ride booking backend for India, focused on verified female
 - Frontend direction: Flutter for Rider and Driver apps; React for Admin dashboard.
 
 Detailed API reference is documented in [docs/API.md](docs/API.md), and step-by-step product/API flows are documented in [docs/FLOW.md](docs/FLOW.md).
+The Rapido-level feature gap and staged product roadmap are documented in [docs/RAPIDO_LEVEL_FEATURE_ROADMAP.md](docs/RAPIDO_LEVEL_FEATURE_ROADMAP.md).
 
 ## Current MVP Modules
 
@@ -26,6 +27,7 @@ Detailed API reference is documented in [docs/API.md](docs/API.md), and step-by-
 - SOS trigger and admin resolution.
 - Safety score service based on KYC, background verification, ratings, ride history, complaints, deviations, and incidents.
 - Ratings, complaints, payments, subscriptions, child ride, notifications, admin dashboard, and audit logs.
+- Phase 2 MVP+ foundation for saved/recent locations, route estimates, ride route snapshots, Google Maps UI preview, GPS permission handling, expanded payment states, fare breakdowns, and MVP invoice responses.
 
 ## Local Setup
 
@@ -127,6 +129,13 @@ The Flutter app now starts with the SheGo splash screen, restores any saved JWT 
 
 JWT session persistence uses Flutter secure storage; logout clears the saved token and returns to role selection.
 
+Phase 2 map behavior:
+
+- Flutter uses `google_maps_flutter` for route preview.
+- Flutter uses `geolocator` for current location permission and GPS detection.
+- If GPS or Google Maps runtime access is not available locally, the app falls back to the Delhi pickup/drop preview and shows a safe message.
+- Backend route estimates use `DirectionsService`; without `GOOGLE_MAPS_API_KEY`, the local mock provider returns distance, ETA, polyline points, and fare breakdown.
+
 Rider flow:
 
 ```text
@@ -183,6 +192,8 @@ S3_BUCKET=shego-dev-private
 GOOGLE_MAPS_API_KEY=
 ```
 
+If `GOOGLE_MAPS_API_KEY` is empty, `/api/directions/route` returns `provider=LOCAL_MOCK`. This keeps local development runnable without paid Google Maps APIs.
+
 ## Local Admin Login
 
 On backend startup, SheGo checks whether any `ADMIN` user exists. If no admin exists, it creates one from environment variables loaded from `.env`.
@@ -218,6 +229,8 @@ Use the returned JWT in Swagger's **Authorize** button to call `/api/admin/**`.
 - Aadhaar last 4 digits are stored separately for masked display.
 - Full Aadhaar must never be returned in API responses or admin UI.
 - Permanent signup/KYC data must not be stored in Redis.
+- Saved locations, recent location searches, and ride route snapshots are permanent business data and are stored in PostgreSQL.
+- Live ride/driver locations remain temporary operational data and are cached in Redis with TTL.
 
 ## Key API Examples
 
@@ -377,7 +390,7 @@ Content-Type: application/json
 4. Review minor riders with `/api/admin/minor-riders` and guardian approvals with `/api/admin/pending-guardian-verifications`.
 5. Approve rider verification with `/api/admin/approve-rider-verification?riderId=<id>`.
 6. Review driver KYC with `/api/admin/pending-driver-kyc`.
-7. Approve driver verification with `/api/admin/approve-driver-verification?driverId=<id>`.
+7. Approve driver verification with `/api/admin/drivers/{driverId}/approve`.
 8. Set driver availability with `/api/drivers/availability`.
 9. Estimate and book a `SCOOTY` or `BIKE` ride.
 10. Accept, start with OTP, complete, and rate the ride.
@@ -425,6 +438,7 @@ Future implementation must follow these project-specific docs:
 - [Database Rules](docs/DB_RULES.md)
 - [KYC Rules](docs/KYC_RULES.md)
 - [Security Rules](docs/SECURITY_RULES.md)
+- [Rapido-Level Feature Roadmap](docs/RAPIDO_LEVEL_FEATURE_ROADMAP.md)
 - [AWS Deployment Guide](docs/AWS_DEPLOYMENT_GUIDE.md)
 - [Play Store and User Release Guide](docs/PLAYSTORE_AND_USER_RELEASE_GUIDE.md)
 

@@ -7,6 +7,7 @@ import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.repository.query.Param;
 
 import java.util.Optional;
+import java.util.List;
 import java.util.UUID;
 
 public interface UserRepository extends JpaRepository<User, UUID> {
@@ -17,6 +18,14 @@ public interface UserRepository extends JpaRepository<User, UUID> {
     Optional<User> findByEmail(String email);
 
     boolean existsByMobileNumber(String mobileNumber);
+
+    @Query("""
+            select distinct u
+            from User u
+            join u.roles r
+            where r = :role
+            """)
+    List<User> findByRole(@Param("role") com.shego.common.Role role);
 
     @Query("""
             select count(u) > 0

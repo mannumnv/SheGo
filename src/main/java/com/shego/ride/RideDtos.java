@@ -35,11 +35,11 @@ public class RideDtos {
         }
     }
 
-    public record ParticipantDriverDetails(String fullName, String contactNumber, String profilePhotoUrl,
+    public record ParticipantDriverDetails(UUID userId, String fullName, String contactNumber, String profilePhotoUrl,
                                            VehicleType vehicleType, String vehicleRegistrationNumber, String vehicleModel) {
     }
 
-    public record ParticipantRiderDetails(String fullName, String contactNumber, String profilePhotoUrl) {
+    public record ParticipantRiderDetails(UUID userId, String fullName, String contactNumber, String profilePhotoUrl) {
     }
 
     public record RideDetailsResponse(UUID id, RideStatus status, VehicleType vehicleType, UUID riderId, UUID driverId,

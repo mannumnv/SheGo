@@ -2,7 +2,9 @@ package com.shego.storage;
 
 import com.shego.exception.BusinessException;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import software.amazon.awssdk.core.exception.SdkClientException;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.presigner.S3Presigner;
@@ -42,7 +44,11 @@ public class StorageService {
                 .signatureDuration(Duration.ofMinutes(10))
                 .putObjectRequest(putObjectRequest)
                 .build();
-        return new StorageDtos.UploadIntentResponse(key, presigner.presignPutObject(presignRequest).url().toString(), "PUT");
+        try {
+            return new StorageDtos.UploadIntentResponse(key, presigner.presignPutObject(presignRequest).url().toString(), "PUT");
+        } catch (SdkClientException exception) {
+            throw new BusinessException("S3 storage is not configured for this environment", HttpStatus.SERVICE_UNAVAILABLE);
+        }
     }
 
     public StorageDtos.DownloadIntentResponse downloadIntent(StorageDtos.DownloadIntentRequest request) {
@@ -62,6 +68,10 @@ public class StorageService {
                 .signatureDuration(Duration.ofMinutes(10))
                 .getObjectRequest(getObjectRequest)
                 .build();
-        return presigner.presignGetObject(presignRequest).url().toString();
+        try {
+            return presigner.presignGetObject(presignRequest).url().toString();
+        } catch (SdkClientException exception) {
+            throw new BusinessException("S3 storage is not configured for this environment", HttpStatus.SERVICE_UNAVAILABLE);
+        }
     }
 }

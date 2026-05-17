@@ -3,12 +3,15 @@ package com.shego.driver;
 import com.shego.auth.AuthDtos;
 import com.shego.common.AdminApprovalStatus;
 import com.shego.common.AccountStatus;
+import com.shego.common.DriverVerificationStatus;
 import com.shego.common.EligibilityValidationService;
 import com.shego.common.KycStatus;
+import com.shego.common.NotificationType;
 import com.shego.common.Role;
 import com.shego.common.VehicleType;
 import com.shego.config.JwtService;
 import com.shego.exception.BusinessException;
+import com.shego.notification.NotificationService;
 import com.shego.payment.DriverEarningRepository;
 import com.shego.user.User;
 import com.shego.user.UserRepository;
@@ -17,6 +20,7 @@ import com.shego.vehicle.VehicleRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -40,11 +44,12 @@ public class DriverService {
     private final AuthenticationManager authenticationManager;
     private final JwtService jwtService;
     private final EligibilityValidationService eligibility;
+    private final NotificationService notifications;
 
     public DriverService(DriverProfileRepository drivers, VehicleRepository vehicles, UserRepository users,
                          DriverEarningRepository earnings, StringRedisTemplate redis, PasswordEncoder passwordEncoder,
                          AuthenticationManager authenticationManager, JwtService jwtService,
-                         EligibilityValidationService eligibility) {
+                         EligibilityValidationService eligibility, NotificationService notifications) {
         this.drivers = drivers;
         this.vehicles = vehicles;
         this.users = users;
@@ -54,6 +59,7 @@ public class DriverService {
         this.authenticationManager = authenticationManager;
         this.jwtService = jwtService;
         this.eligibility = eligibility;
+        this.notifications = notifications;
     }
 
     @Transactional
@@ -90,6 +96,7 @@ public class DriverService {
         driver.setLicenseStorageKey(request.licenseStorageKey());
         driver.setVehicleDocumentStorageKey(request.vehicleDocumentStorageKey());
         driver.setInsuranceDocumentStorageKey(request.insuranceDocumentStorageKey());
+        driver.setVerificationStatus(documentsComplete(driver) ? DriverVerificationStatus.PENDING_VERIFICATION : DriverVerificationStatus.INCOMPLETE);
         DriverProfile savedDriver = drivers.save(driver);
 
         Vehicle vehicle = new Vehicle();
@@ -101,12 +108,23 @@ public class DriverService {
         vehicles.save(vehicle);
         log.debug("Driver signup succeeded: driverId={}, userId={}, mobile={}",
                 savedDriver.getId(), savedUser.getId(), savedUser.getMobileNumber());
+        notifications.create(savedUser, Role.DRIVER, NotificationType.ACTION_REQUIRED,
+                "Upload required KYC documents",
+                "Please submit profile photo, Aadhaar, license, vehicle, and insurance documents before going active.",
+                "DriverProfile", savedDriver.getId().toString(), "driver-documents",
+                "driver-signup-docs:" + savedDriver.getId());
+        notifications.createForRole(Role.ADMIN, NotificationType.ACTION_REQUIRED,
+                "New driver signup",
+                savedUser.getFullName() + " created a driver account. Documents are not submitted yet.",
+                "DriverProfile", savedDriver.getId().toString(), "admin-driver-verification",
+                "admin-driver-signup:" + savedDriver.getId());
         return tokens(savedUser);
     }
 
     public AuthDtos.AuthResponse login(DriverDtos.LoginRequest request) {
         authenticationManager.authenticate(new UsernamePasswordAuthenticationToken(request.mobileNumber(), request.password()));
-        User user = users.findByMobileNumber(request.mobileNumber()).orElseThrow();
+        User user = users.findByMobileNumber(request.mobileNumber())
+                .orElseThrow(() -> new BusinessException("Invalid credentials"));
         if (!user.getRoles().contains(Role.DRIVER)) {
             throw new BusinessException("Driver account not found");
         }
@@ -115,6 +133,7 @@ public class DriverService {
 
     public DriverProfile uploadKyc(User user, DriverDtos.UploadKycRequest request) {
         DriverProfile driver = driverFor(user);
+        ensureDocumentSubmissionAllowed(driver);
         driver.setAadhaarEncrypted(request.aadhaarNumber());
         driver.setAadhaarLast4(last4(request.aadhaarNumber()));
         driver.setProfilePhotoStorageKey(request.profilePhotoStorageKey());
@@ -123,8 +142,87 @@ public class DriverService {
         driver.setLicenseStorageKey(request.licenseStorageKey());
         driver.setVehicleDocumentStorageKey(request.vehicleDocumentStorageKey());
         driver.setInsuranceDocumentStorageKey(request.insuranceDocumentStorageKey());
+        driver.setProfilePhotoData(request.profilePhotoData());
+        driver.setAadhaarDocumentData(request.aadhaarDocumentData());
+        driver.setLicenseDocumentData(request.licenseDocumentData());
+        driver.setVehicleDocumentData(request.vehicleDocumentData());
+        driver.setInsuranceDocumentData(request.insuranceDocumentData());
+        if (!documentsComplete(driver)) {
+            driver.setVerificationStatus(DriverVerificationStatus.INCOMPLETE);
+            driver.setKycStatus(KycStatus.PENDING);
+            driver.setAdminApprovalStatus(AdminApprovalStatus.PENDING);
+            driver.setAdminApproved(false);
+            driver.setAvailable(false);
+            driver.setOnline(false);
+            return drivers.save(driver);
+        }
         driver.setKycStatus(KycStatus.PENDING);
-        return drivers.save(driver);
+        driver.setAdminApprovalStatus(AdminApprovalStatus.PENDING);
+        driver.setAdminApproved(false);
+        driver.setAvailable(false);
+        driver.setOnline(false);
+        boolean resubmission = driver.getVerificationStatus() == DriverVerificationStatus.REJECTED;
+        driver.setVerificationStatus(DriverVerificationStatus.PENDING_VERIFICATION);
+        driver.setVerificationRejectionReason(null);
+        DriverProfile saved = drivers.save(driver);
+        notifications.create(user, Role.DRIVER, NotificationType.INFO,
+                "Documents submitted",
+                "Your documents have been submitted and are pending admin verification.",
+                "DriverProfile", saved.getId().toString(), "driver-documents",
+                "driver-docs-submitted:" + saved.getId());
+        notifications.createForRole(Role.ADMIN, NotificationType.ACTION_REQUIRED,
+                resubmission ? "Driver re-submitted documents" : "Driver verification request received",
+                user.getFullName() + " submitted driver verification documents for review.",
+                "DriverProfile", saved.getId().toString(), "admin-driver-verification",
+                (resubmission ? "admin-driver-resubmitted:" : "admin-driver-docs:") + saved.getId());
+        return saved;
+    }
+
+    public DriverProfile submitDocuments(User user, DriverDtos.UploadKycRequest request) {
+        DriverProfile driver = driverFor(user);
+        ensureDocumentSubmissionAllowed(driver);
+        boolean resubmission = driver.getVerificationStatus() == DriverVerificationStatus.REJECTED
+                || driver.getVerificationStatus() == DriverVerificationStatus.RESUBMISSION_REQUIRED;
+        applyIfPresent(request.profilePhotoStorageKey(), driver::setProfilePhotoStorageKey);
+        applyIfPresent(request.selfieStorageKey(), driver::setSelfieStorageKey);
+        applyIfPresent(request.aadhaarStorageKey(), driver::setAadhaarStorageKey);
+        applyIfPresent(request.licenseStorageKey(), driver::setLicenseStorageKey);
+        applyIfPresent(request.vehicleDocumentStorageKey(), driver::setVehicleDocumentStorageKey);
+        applyIfPresent(request.insuranceDocumentStorageKey(), driver::setInsuranceDocumentStorageKey);
+        applyIfPresent(request.profilePhotoData(), driver::setProfilePhotoData);
+        applyIfPresent(request.aadhaarDocumentData(), driver::setAadhaarDocumentData);
+        applyIfPresent(request.licenseDocumentData(), driver::setLicenseDocumentData);
+        applyIfPresent(request.vehicleDocumentData(), driver::setVehicleDocumentData);
+        applyIfPresent(request.insuranceDocumentData(), driver::setInsuranceDocumentData);
+        if (request.aadhaarNumber() != null && !request.aadhaarNumber().isBlank()) {
+            driver.setAadhaarEncrypted(request.aadhaarNumber());
+            driver.setAadhaarLast4(last4(request.aadhaarNumber()));
+        }
+        if (!documentsComplete(driver)) {
+            driver.setVerificationStatus(DriverVerificationStatus.INCOMPLETE);
+            driver.setAvailable(false);
+            driver.setOnline(false);
+            throw new BusinessException("All required driver documents must be submitted before admin verification");
+        }
+        driver.setKycStatus(KycStatus.PENDING);
+        driver.setAdminApprovalStatus(AdminApprovalStatus.PENDING);
+        driver.setAdminApproved(false);
+        driver.setAvailable(false);
+        driver.setOnline(false);
+        driver.setVerificationStatus(DriverVerificationStatus.PENDING_VERIFICATION);
+        driver.setVerificationRejectionReason(null);
+        DriverProfile saved = drivers.save(driver);
+        notifications.create(user, Role.DRIVER, NotificationType.INFO,
+                "Documents submitted",
+                "Your documents have been submitted and are pending admin verification.",
+                "DriverProfile", saved.getId().toString(), "driver-documents",
+                "driver-docs-submitted:" + saved.getId());
+        notifications.createForRole(Role.ADMIN, NotificationType.ACTION_REQUIRED,
+                resubmission ? "Driver re-submitted documents" : "Driver verification request received",
+                user.getFullName() + " submitted driver verification documents for review.",
+                "DriverProfile", saved.getId().toString(), "admin-driver-verification",
+                (resubmission ? "admin-driver-resubmitted:" : "admin-driver-docs:") + saved.getId());
+        return saved;
     }
 
     @Transactional
@@ -148,8 +246,14 @@ public class DriverService {
 
     public DriverProfile availability(User user, DriverDtos.AvailabilityRequest request) {
         DriverProfile driver = driverFor(user);
-        if (!driver.isAdminApproved() || driver.getAdminApprovalStatus() != AdminApprovalStatus.APPROVED || driver.getKycStatus() != com.shego.common.KycStatus.APPROVED || user.getAccountStatus() != AccountStatus.ACTIVE) {
-            throw new BusinessException("Driver must be KYC approved and admin approved before going online");
+        if (request.available() || request.online()) {
+            if (driver.getVerificationStatus() != DriverVerificationStatus.APPROVED
+                    || !driver.isAdminApproved()
+                    || driver.getAdminApprovalStatus() != AdminApprovalStatus.APPROVED
+                    || driver.getKycStatus() != KycStatus.APPROVED
+                    || user.getAccountStatus() != AccountStatus.ACTIVE) {
+                throw new BusinessException("Your documents must be approved by Admin before going active.");
+            }
         }
         driver.setAvailable(request.available());
         driver.setOnline(request.online());
@@ -172,18 +276,29 @@ public class DriverService {
         return earnings.findByDriverOrderByCreatedAtDesc(driverFor(user));
     }
 
+    public DriverDtos.VerificationStatusResponse verificationStatus(User user) {
+        DriverProfile driver = driverFor(user);
+        return new DriverDtos.VerificationStatusResponse(driver.getId(), driver.getVerificationStatus(),
+                driver.getVerificationRejectionReason(), documentsComplete(driver),
+                driver.getVerificationStatus() == DriverVerificationStatus.APPROVED);
+    }
+
     public DriverProfile approve(UUID id) {
-        DriverProfile driver = drivers.findById(id).orElseThrow();
+        DriverProfile driver = drivers.findById(id)
+                .orElseThrow(() -> new BusinessException("Driver not found", HttpStatus.NOT_FOUND));
         driver.setKycStatus(KycStatus.APPROVED);
         driver.setAdminApproved(true);
         driver.setAdminApprovalStatus(AdminApprovalStatus.APPROVED);
+        driver.setVerificationStatus(DriverVerificationStatus.APPROVED);
+        driver.setVerificationRejectionReason(null);
         driver.setAvailable(false);
         driver.setOnline(false);
         return drivers.save(driver);
     }
 
     public DriverProfile driverFor(User user) {
-        return drivers.findByUser(user).orElseThrow(() -> new BusinessException("Driver profile not found"));
+        return drivers.findByUser(user)
+                .orElseThrow(() -> new BusinessException("Driver profile not found", HttpStatus.FORBIDDEN));
     }
 
     public DriverDtos.DriverResponse response(DriverProfile driver) {
@@ -205,5 +320,31 @@ public class DriverService {
             return digits;
         }
         return digits.substring(digits.length() - 4);
+    }
+
+    private boolean documentsComplete(DriverProfile driver) {
+        return (hasValue(driver.getProfilePhotoStorageKey()) || hasValue(driver.getProfilePhotoData()))
+                && (hasValue(driver.getAadhaarStorageKey()) || hasValue(driver.getAadhaarDocumentData()))
+                && (hasValue(driver.getLicenseStorageKey()) || hasValue(driver.getLicenseDocumentData()))
+                && (hasValue(driver.getVehicleDocumentStorageKey()) || hasValue(driver.getVehicleDocumentData()))
+                && (hasValue(driver.getInsuranceDocumentStorageKey()) || hasValue(driver.getInsuranceDocumentData()));
+    }
+
+    private boolean hasValue(String value) {
+        return value != null && !value.isBlank();
+    }
+
+    private void applyIfPresent(String value, java.util.function.Consumer<String> setter) {
+        if (hasValue(value)) {
+            setter.accept(value);
+        }
+    }
+
+    private void ensureDocumentSubmissionAllowed(DriverProfile driver) {
+        if (driver.getVerificationStatus() != DriverVerificationStatus.INCOMPLETE
+                && driver.getVerificationStatus() != DriverVerificationStatus.REJECTED
+                && driver.getVerificationStatus() != DriverVerificationStatus.RESUBMISSION_REQUIRED) {
+            throw new BusinessException("Documents cannot be re-submitted unless Admin requests re-submission.");
+        }
     }
 }

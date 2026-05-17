@@ -1,8 +1,11 @@
 import { test, expect } from '@playwright/test';
+import { apiUrl, auth } from '../clients/authClient';
 import { DriverClient } from '../clients/driverClient';
 import { RiderClient } from '../clients/riderClient';
 import { adultFemaleDriver, adultFemaleRider, minorFemaleRider } from '../fixtures/testUsers';
 import { expectBadRequest, expectOk } from '../utils/assertions';
+
+const missingId = '00000000-0000-4000-8000-000000000001';
 
 test.describe('Negative validation and privacy', () => {
   test('driver signup ignores/rejects rider-only fields by schema validation boundary', async ({ request }) => {
@@ -35,5 +38,40 @@ test.describe('Negative validation and privacy', () => {
     const drivers = new DriverClient(request);
     const token = await drivers.signupToken(adultFemaleDriver());
     await expectBadRequest(await drivers.availability(token), 'Driver must be KYC approved and admin approved');
+  });
+
+  test('missing ride/payment/rating resources return safe API errors', async ({ request }) => {
+    const drivers = new DriverClient(request);
+    const token = await drivers.signupToken(adultFemaleDriver());
+
+    await expectBadRequest(await request.get(apiUrl(`/api/rides/${missingId}`), { headers: auth(token) }), 'Ride not found');
+    await expectBadRequest(await request.post(apiUrl('/api/payments/initiate'), {
+      headers: auth(token),
+      data: { rideId: missingId, amount: 100, method: 'CASH' }
+    }), 'Ride not found');
+    await expectBadRequest(await request.post(apiUrl('/api/ratings'), {
+      headers: auth(token),
+      data: {
+        rideId: missingId,
+        ratedUserId: missingId,
+        overallRating: 5,
+        safetyRating: 5,
+        comfortRating: 5,
+        drivingBehaviorRating: 5,
+        comments: 'safe',
+        unsafeReported: false
+      }
+    }), 'Ride not found');
+  });
+
+  test('missing driver and subscription plan return safe API errors', async ({ request }) => {
+    const drivers = new DriverClient(request);
+    const token = await drivers.signupToken(adultFemaleDriver());
+
+    await expectBadRequest(await request.get(apiUrl(`/api/safety/driver/${missingId}/score`), { headers: auth(token) }), 'Driver not found');
+    await expectBadRequest(await request.post(apiUrl('/api/subscriptions/purchase'), {
+      headers: auth(token),
+      data: { planId: missingId }
+    }), 'Subscription plan not found');
   });
 });

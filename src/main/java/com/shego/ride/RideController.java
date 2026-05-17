@@ -38,6 +38,11 @@ public class RideController {
         return ApiResponse.ok("Ride accepted", rideService.acceptedResponse(rideService.accept(currentUserService.current(), id)));
     }
 
+    @GetMapping("/requests")
+    ApiResponse<List<RideDtos.RideDetailsResponse>> requests() {
+        return ApiResponse.ok("Available ride requests", rideService.availableRequests(currentUserService.current()));
+    }
+
     @PostMapping("/{id}/reject")
     ApiResponse<RideDtos.RideResponse> reject(@PathVariable UUID id) {
         return ApiResponse.ok("Ride rejected", RideDtos.RideResponse.from(rideService.reject(currentUserService.current(), id)));

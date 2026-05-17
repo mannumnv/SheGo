@@ -8,6 +8,7 @@ import com.shego.rider.RiderProfileRepository;
 import com.shego.ride.Ride;
 import com.shego.ride.RideRepository;
 import com.shego.user.User;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -31,7 +32,8 @@ public class GuardianService {
     }
 
     public GuardianContact add(User user, GuardianDtos.UpsertRequest request) {
-        RiderProfile rider = riders.findByUser(user).orElseThrow(() -> new BusinessException("Rider profile not found"));
+        RiderProfile rider = riders.findByUser(user)
+                .orElseThrow(() -> new BusinessException("Rider profile not found", HttpStatus.FORBIDDEN));
         GuardianContact contact = new GuardianContact();
         contact.setRider(rider);
         contact.setName(request.name());
@@ -42,7 +44,8 @@ public class GuardianService {
     }
 
     public List<GuardianContact> list(User user) {
-        RiderProfile rider = riders.findByUser(user).orElseThrow(() -> new BusinessException("Rider profile not found"));
+        RiderProfile rider = riders.findByUser(user)
+                .orElseThrow(() -> new BusinessException("Rider profile not found", HttpStatus.FORBIDDEN));
         return contacts.findByRider(rider);
     }
 
@@ -51,14 +54,17 @@ public class GuardianService {
     }
 
     public Ride share(UUID rideId) {
-        Ride ride = rides.findById(rideId).orElseThrow();
+        Ride ride = rides.findById(rideId)
+                .orElseThrow(() -> new BusinessException("Ride not found", HttpStatus.NOT_FOUND));
         ride.setGuardianModeEnabled(true);
         return rides.save(ride);
     }
 
     public TrustedDriver addTrustedDriver(User user, UUID driverId) {
-        RiderProfile rider = riders.findByUser(user).orElseThrow(() -> new BusinessException("Rider profile not found"));
-        DriverProfile driver = drivers.findById(driverId).orElseThrow(() -> new BusinessException("Driver not found"));
+        RiderProfile rider = riders.findByUser(user)
+                .orElseThrow(() -> new BusinessException("Rider profile not found", HttpStatus.FORBIDDEN));
+        DriverProfile driver = drivers.findById(driverId)
+                .orElseThrow(() -> new BusinessException("Driver not found", HttpStatus.NOT_FOUND));
         if (trustedDrivers.existsByRiderAndDriver(rider, driver)) {
             throw new BusinessException("Driver is already in trusted circle");
         }
@@ -69,7 +75,8 @@ public class GuardianService {
     }
 
     public List<TrustedDriver> trustedDrivers(User user) {
-        RiderProfile rider = riders.findByUser(user).orElseThrow(() -> new BusinessException("Rider profile not found"));
+        RiderProfile rider = riders.findByUser(user)
+                .orElseThrow(() -> new BusinessException("Rider profile not found", HttpStatus.FORBIDDEN));
         return trustedDrivers.findByRider(rider);
     }
 }

@@ -22,8 +22,16 @@ export class DriverClient {
     return this.request.get(apiUrl('/api/drivers/profile'), { headers: auth(token) });
   }
 
+  verificationStatus(token: string) {
+    return this.request.get(apiUrl('/api/drivers/verification-status'), { headers: auth(token) });
+  }
+
   uploadKyc(token: string, payload: Record<string, unknown>) {
     return this.request.post(apiUrl('/api/drivers/upload-kyc'), { headers: auth(token), data: payload });
+  }
+
+  submitDocuments(token: string, payload: Record<string, unknown>) {
+    return this.request.post(apiUrl('/api/drivers/verification-documents'), { headers: auth(token), data: payload });
   }
 
   availability(token: string, available = true, online = true) {

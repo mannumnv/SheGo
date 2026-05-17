@@ -105,7 +105,8 @@ public class AuthService {
     public AuthDtos.AuthResponse refresh(AuthDtos.RefreshTokenRequest request) {
         jwtService.valid(request.refreshToken());
         String mobile = jwtService.subject(request.refreshToken());
-        User user = users.findByMobileNumber(mobile).orElseThrow();
+        User user = users.findByMobileNumber(mobile)
+                .orElseThrow(() -> new BusinessException("User not found"));
         return tokens(user);
     }
 

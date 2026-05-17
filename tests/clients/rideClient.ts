@@ -13,6 +13,10 @@ export class RideClient {
     return this.request.post(apiUrl('/api/rides/book'), { headers: auth(token), data: { vehicleType, ...pickup, ...drop } });
   }
 
+  requests(token: string) {
+    return this.request.get(apiUrl('/api/rides/requests'), { headers: auth(token) });
+  }
+
   accept(token: string, rideId: string) {
     return this.request.post(apiUrl(`/api/rides/${rideId}/accept`), { headers: auth(token), data: {} });
   }

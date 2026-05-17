@@ -4,6 +4,7 @@ import { RiderClient } from '../clients/riderClient';
 import { DriverClient } from '../clients/driverClient';
 import { adultFemaleDriver, adultFemaleRider } from '../fixtures/testUsers';
 import { expectBadRequest, expectOk } from '../utils/assertions';
+import { requireAdmin } from '../utils/flow';
 
 test.describe('Auth APIs', () => {
   test('rider signup returns JWT and JWT profile validation works', async ({ request }) => {
@@ -29,6 +30,16 @@ test.describe('Auth APIs', () => {
     })).response);
     const login = await expectOk((await auth.login(mobileNumber, 'Secret123!')).response);
     expect(login.accessToken).toBeTruthy();
+  });
+
+  test('admin login succeeds and notification APIs tolerate no websocket client', async ({ request }) => {
+    const { mobile, password } = requireAdmin();
+    const auth = new AuthClient(request);
+    const token = await auth.loginToken(mobile, password);
+    const notifications = await expectOk(await request.get(apiUrl('/api/notifications'), { headers: { Authorization: `Bearer ${token}` } }));
+    expect(Array.isArray(notifications)).toBe(true);
+    const unread = await expectOk(await request.get(apiUrl('/api/notifications/unread-count'), { headers: { Authorization: `Bearer ${token}` } }));
+    expect(unread).toHaveProperty('count');
   });
 
   test('driver signup and login', async ({ request }) => {

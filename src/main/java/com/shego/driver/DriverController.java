@@ -47,6 +47,18 @@ public class DriverController {
                 DriverDtos.DriverProfileResponse.from(driverService.uploadKyc(currentUserService.current(), request)));
     }
 
+    @PostMapping("/verification-documents")
+    ApiResponse<DriverDtos.DriverProfileResponse> submitVerificationDocuments(@RequestBody DriverDtos.UploadKycRequest request) {
+        return ApiResponse.ok("Your documents have been submitted and are pending admin verification.",
+                DriverDtos.DriverProfileResponse.from(driverService.submitDocuments(currentUserService.current(), request)));
+    }
+
+    @GetMapping("/verification-status")
+    ApiResponse<DriverDtos.VerificationStatusResponse> verificationStatus() {
+        return ApiResponse.ok("Driver verification status",
+                driverService.verificationStatus(currentUserService.current()));
+    }
+
     @GetMapping("/profile")
     ApiResponse<DriverDtos.DriverProfileResponse> profile() {
         return ApiResponse.ok("Driver profile",

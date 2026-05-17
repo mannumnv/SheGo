@@ -1,9 +1,11 @@
 package com.shego.rating;
 
 import com.shego.common.ApiResponse;
+import com.shego.exception.BusinessException;
 import com.shego.ride.RideRepository;
 import com.shego.user.CurrentUserService;
 import com.shego.user.UserRepository;
+import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -30,9 +32,11 @@ public class RatingController {
     @PostMapping("/api/ratings")
     ApiResponse<Rating> create(@RequestBody RatingDtos.RatingRequest request) {
         Rating rating = new Rating();
-        rating.setRide(rides.findById(request.rideId()).orElseThrow());
+        rating.setRide(rides.findById(request.rideId())
+                .orElseThrow(() -> new BusinessException("Ride not found", HttpStatus.NOT_FOUND)));
         rating.setRatedBy(currentUserService.current());
-        rating.setRatedUser(users.findById(request.ratedUserId()).orElseThrow());
+        rating.setRatedUser(users.findById(request.ratedUserId())
+                .orElseThrow(() -> new BusinessException("Rated user not found", HttpStatus.NOT_FOUND)));
         rating.setOverallRating(request.overallRating());
         rating.setSafetyRating(request.safetyRating());
         rating.setComfortRating(request.comfortRating());
@@ -44,6 +48,7 @@ public class RatingController {
 
     @GetMapping("/api/drivers/{id}/ratings")
     ApiResponse<List<Rating>> driverRatings(@PathVariable UUID id) {
-        return ApiResponse.ok("Driver ratings", ratings.findByRatedUser(users.findById(id).orElseThrow()));
+        return ApiResponse.ok("Driver ratings", ratings.findByRatedUser(users.findById(id)
+                .orElseThrow(() -> new BusinessException("Driver user not found", HttpStatus.NOT_FOUND))));
     }
 }

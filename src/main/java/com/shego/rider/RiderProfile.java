@@ -58,6 +58,7 @@ public class RiderProfile extends BaseEntity {
     private String riderAadhaarLast4;
 
     private boolean guardianConsent;
+    private boolean active = true;
 
     @Enumerated(EnumType.STRING)
     private VerificationType verificationType;

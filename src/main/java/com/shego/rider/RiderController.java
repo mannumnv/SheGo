@@ -6,6 +6,7 @@ import com.shego.user.CurrentUserService;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -40,5 +41,11 @@ public class RiderController {
     @GetMapping("/profile")
     ApiResponse<RiderDtos.RiderProfileResponse> profile() {
         return ApiResponse.ok("Rider profile", RiderDtos.RiderProfileResponse.from(riders.profile(currentUserService.current())));
+    }
+
+    @PutMapping("/active")
+    ApiResponse<RiderDtos.RiderProfileResponse> active(@RequestBody RiderDtos.ActiveRequest request) {
+        return ApiResponse.ok("Rider active status updated",
+                RiderDtos.RiderProfileResponse.from(riders.active(currentUserService.current(), request)));
     }
 }

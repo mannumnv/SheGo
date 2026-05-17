@@ -21,6 +21,14 @@ export class AdminClient {
     return this.request.post(apiUrl(`/api/admin/drivers/${driverId}/approve`), { headers: auth(this.token) });
   }
 
+  rejectDriverVerification(driverId: string, reason = 'Rejected by automated test') {
+    return this.request.post(apiUrl(`/api/admin/reject-driver-verification?driverId=${driverId}&reason=${encodeURIComponent(reason)}`), { headers: auth(this.token), data: {} });
+  }
+
+  requestDriverResubmission(driverId: string, reason = 'Please upload clearer documents') {
+    return this.request.post(apiUrl(`/api/admin/request-driver-resubmission?driverId=${driverId}&reason=${encodeURIComponent(reason)}`), { headers: auth(this.token), data: {} });
+  }
+
   approveRiderVerification(riderId: string) {
     return this.request.post(apiUrl(`/api/admin/approve-rider-verification?riderId=${riderId}`), { headers: auth(this.token) });
   }

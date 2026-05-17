@@ -27,12 +27,18 @@ public class Payment extends BaseEntity {
     private Ride ride;
 
     private BigDecimal amount;
+    private BigDecimal baseFare;
+    private BigDecimal distanceFare;
+    private BigDecimal timeFare;
+    private BigDecimal platformFee;
+    private BigDecimal surgeFee;
 
     @Enumerated(EnumType.STRING)
     private PaymentMethod method;
 
     @Enumerated(EnumType.STRING)
-    private PaymentStatus status = PaymentStatus.INITIATED;
+    private PaymentStatus status = PaymentStatus.PENDING;
 
     private String providerReference;
+    private String invoiceNumber;
 }

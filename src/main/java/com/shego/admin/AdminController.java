@@ -4,6 +4,7 @@ import com.shego.common.AccountStatus;
 import com.shego.common.ApiResponse;
 import com.shego.common.KycStatus;
 import com.shego.common.VerificationType;
+import com.shego.exception.BusinessException;
 import com.shego.driver.DriverDtos;
 import com.shego.driver.DriverProfileRepository;
 import com.shego.rider.RiderDtos;
@@ -16,6 +17,7 @@ import com.shego.user.UserDtos;
 import com.shego.user.UserRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -71,7 +73,8 @@ public class AdminController {
 
     @PostMapping("/users/{id}/suspend")
     ApiResponse<Void> suspend(@PathVariable UUID id) {
-        var user = users.findById(id).orElseThrow();
+        var user = users.findById(id)
+                .orElseThrow(() -> new BusinessException("User not found", HttpStatus.NOT_FOUND));
         user.setAccountStatus(AccountStatus.SUSPENDED);
         users.save(user);
         log("SUSPEND_USER", "User", id.toString(), null);
@@ -80,7 +83,8 @@ public class AdminController {
 
     @PostMapping("/users/{id}/block")
     ApiResponse<Void> block(@PathVariable UUID id) {
-        var user = users.findById(id).orElseThrow();
+        var user = users.findById(id)
+                .orElseThrow(() -> new BusinessException("User not found", HttpStatus.NOT_FOUND));
         user.setAccountStatus(AccountStatus.BLOCKED);
         users.save(user);
         log("BLOCK_USER", "User", id.toString(), null);
@@ -235,6 +239,14 @@ public class AdminController {
         var response = adminService.rejectDriverVerification(driverId, reason);
         log("REJECT_DRIVER_VERIFICATION", "DriverProfile", driverId.toString(), reason);
         return ApiResponse.ok("Driver verification rejected", response);
+    }
+
+    @PostMapping("/request-driver-resubmission")
+    ApiResponse<DriverDtos.DriverProfileResponse> requestDriverResubmission(@RequestParam UUID driverId,
+                                                                            @RequestParam(required = false) String reason) {
+        var response = adminService.requestDriverResubmission(driverId, reason);
+        log("REQUEST_DRIVER_RESUBMISSION", "DriverProfile", driverId.toString(), reason);
+        return ApiResponse.ok("Driver document re-submission requested", response);
     }
 
     private void log(String action, String targetType, String targetId, String notes) {

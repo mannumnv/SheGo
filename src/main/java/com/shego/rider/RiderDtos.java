@@ -26,18 +26,24 @@ public class RiderDtos {
                                               @NotBlank String guardianRelationship, boolean guardianConsent) {
     }
 
+    public record ActiveRequest(boolean active) {
+    }
+
     public record RiderProfileResponse(UUID id, String fullName, String mobileNumber, Gender gender, LocalDate dateOfBirth,
                                        int age, RiderAgeCategory ageCategory, VerificationType verificationType,
                                        KycStatus kycStatus, AccountStatus accountStatus, String guardianRelationship,
                                        String guardianMobileNumber, String guardianAadhaarLast4, String riderAadhaarLast4,
-                                       boolean guardianConsent) {
+                                       boolean guardianConsent, String address, String profilePhotoStorageKey,
+                                       String emergencyContact, String guardianName, boolean active) {
         public static RiderProfileResponse from(RiderProfile profile) {
             return new RiderProfileResponse(profile.getId(), profile.getUser().getFullName(), profile.getUser().getMobileNumber(),
                     profile.getRiderGender(), profile.getRiderDateOfBirth(), profile.getRiderAge(),
                     profile.getRiderAgeCategory(), profile.getVerificationType(), profile.getKycStatus(),
                     profile.getUser().getAccountStatus(), profile.getGuardianRelationship(),
                     profile.getGuardianMobileNumber(), profile.getGuardianAadhaarLast4(),
-                    profile.getRiderAadhaarLast4(), profile.isGuardianConsent());
+                    profile.getRiderAadhaarLast4(), profile.isGuardianConsent(), profile.getAddress(),
+                    profile.getProfilePhotoStorageKey(), profile.getEmergencyContact(), profile.getGuardianName(),
+                    profile.isActive());
         }
     }
 }

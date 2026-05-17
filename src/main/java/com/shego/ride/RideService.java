@@ -2,10 +2,14 @@ package com.shego.ride;
 
 import com.shego.common.AccountStatus;
 import com.shego.common.KycStatus;
+import com.shego.common.NotificationType;
+import com.shego.common.Role;
 import com.shego.common.RideStatus;
 import com.shego.driver.DriverProfile;
 import com.shego.driver.DriverProfileRepository;
 import com.shego.exception.BusinessException;
+import com.shego.location.LocationDtos;
+import com.shego.location.LocationService;
 import com.shego.notification.NotificationService;
 import com.shego.payment.DriverEarning;
 import com.shego.payment.DriverEarningRepository;
@@ -17,6 +21,7 @@ import com.shego.user.User;
 import com.shego.vehicle.Vehicle;
 import com.shego.vehicle.VehicleRepository;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -49,12 +54,13 @@ public class RideService {
     private final PasswordEncoder passwordEncoder;
     private final StringRedisTemplate redis;
     private final StorageService storage;
+    private final LocationService locationService;
     private final SecureRandom random = new SecureRandom();
 
     public RideService(RideRepository rides, RiderProfileRepository riders, DriverProfileRepository drivers,
                        SafetyScoreService safetyScoreService, DriverEarningRepository earnings,
                        NotificationService notifications, VehicleRepository vehicles, PasswordEncoder passwordEncoder,
-                       StringRedisTemplate redis, StorageService storage) {
+                       StringRedisTemplate redis, StorageService storage, LocationService locationService) {
         this.rides = rides;
         this.riders = riders;
         this.drivers = drivers;
@@ -65,6 +71,7 @@ public class RideService {
         this.passwordEncoder = passwordEncoder;
         this.redis = redis;
         this.storage = storage;
+        this.locationService = locationService;
     }
 
     public RideDtos.EstimateResponse estimate(RideDtos.EstimateRequest request) {
@@ -74,11 +81,17 @@ public class RideService {
     }
 
     public Ride book(User user, RideDtos.BookRequest request) {
-        RiderProfile rider = riders.findByUser(user).orElseThrow(() -> new BusinessException("Rider profile not found"));
+        RiderProfile rider = riders.findByUser(user)
+                .orElseThrow(() -> new BusinessException("Rider profile not found", HttpStatus.FORBIDDEN));
         if (user.getAccountStatus() != AccountStatus.ACTIVE || rider.getKycStatus() != KycStatus.APPROVED) {
             throw new BusinessException("Only approved riders can book rides");
         }
-        RideDtos.EstimateResponse estimate = estimate(new RideDtos.EstimateRequest(request.vehicleType(), request.pickupLat(), request.pickupLng(), request.dropLat(), request.dropLng()));
+        if (!rider.isActive()) {
+            throw new BusinessException("Rider account is inactive. Turn active status on before booking.");
+        }
+        LocationDtos.DirectionsResponse route = locationService.route(new LocationDtos.DirectionsRequest(
+                request.pickupLat(), request.pickupLng(), request.dropLat(), request.dropLng(), request.pickupAddress(), request.dropAddress()));
+        RideDtos.EstimateResponse estimate = new RideDtos.EstimateResponse(route.distanceKm(), route.etaMinutes(), route.fareBreakdown().totalFare());
         Ride ride = new Ride();
         ride.setRider(rider);
         ride.setVehicleType(request.vehicleType());
@@ -94,7 +107,16 @@ public class RideService {
         ride.setLateNight(isLateNight());
         ride.setGuardianModeEnabled(ride.isLateNight());
         Ride saved = rides.save(ride);
+        locationService.snapshot(saved, route);
         notifications.create(user, "PUSH", "Ride requested", "Your SheGo ride request has been created.");
+        drivers.findAvailableApprovedDrivers().stream()
+                .filter(driver -> driver.isOnline() && driver.isAvailable())
+                .filter(driver -> driver.getVehicleType() == saved.getVehicleType())
+                .forEach(driver -> notifications.create(driver.getUser(), Role.DRIVER, NotificationType.RIDE,
+                        "New ride request received",
+                        "A rider requested a " + saved.getVehicleType() + " ride near " + safeAddress(saved.getPickupAddress()) + ".",
+                        "Ride", saved.getId().toString(), "driver-ride-requests",
+                        "ride-request:" + saved.getId() + ":" + driver.getId()));
         return saved;
     }
 
@@ -118,18 +140,25 @@ public class RideService {
 
     @Transactional
     public Ride accept(User user, UUID rideId) {
-        DriverProfile driver = drivers.findByUser(user).orElseThrow(() -> new BusinessException("Driver profile not found"));
+        DriverProfile driver = drivers.findByUser(user)
+                .orElseThrow(() -> new BusinessException("Driver profile not found", HttpStatus.FORBIDDEN));
         if (!driver.isAdminApproved() || driver.getKycStatus() != KycStatus.APPROVED || user.getAccountStatus() != AccountStatus.ACTIVE) {
             throw new BusinessException("Only verified women drivers can accept rides");
+        }
+        if (!driver.isOnline() || !driver.isAvailable()) {
+            throw new BusinessException("Driver must be active and available before accepting rides");
         }
         if (!rides.findByDriverAndStatusIn(driver, ACTIVE).isEmpty()) {
             throw new BusinessException("Driver already has an active ride");
         }
-        Ride ride = rides.findById(rideId).orElseThrow();
+        Ride ride = rides.findByIdForUpdate(rideId)
+                .orElseThrow(() -> new BusinessException("Ride not found", HttpStatus.NOT_FOUND));
+        if (ride.getDriver() != null || ride.getStatus() != RideStatus.REQUESTED) {
+            throw new BusinessException("Ride is already accepted by another driver", HttpStatus.CONFLICT);
+        }
         Vehicle vehicle = vehicles.findByDriverAndActiveTrue(driver)
                 .filter(v -> v.getVehicleType() == ride.getVehicleType())
                 .orElseThrow(() -> new BusinessException("Driver does not have an active matching scooty/bike vehicle"));
-        if (ride.getStatus() != RideStatus.REQUESTED) throw new BusinessException("Ride is not requestable");
         ride.setDriver(driver);
         ride.setVehicle(vehicle);
         ride.setVehicleRegistrationSnapshot(vehicle.getRegistrationNumber());
@@ -141,12 +170,24 @@ public class RideService {
         drivers.save(driver);
         Ride saved = rides.save(ride);
         notifications.create(ride.getRider().getUser(), "PUSH", "Ride accepted", "A verified SheGo driver accepted your ride.");
+        notifications.create(ride.getRider().getUser(), Role.RIDER, NotificationType.RIDE,
+                "Driver assigned",
+                driver.getUser().getFullName() + " accepted your ride.",
+                "Ride", saved.getId().toString(), "ride-details",
+                "ride-accepted-rider:" + saved.getId());
+        notifications.create(driver.getUser(), Role.DRIVER, NotificationType.RIDE,
+                "Ride accepted",
+                "You accepted the ride. Navigate to pickup when ready.",
+                "Ride", saved.getId().toString(), "driver-active-ride",
+                "ride-accepted-driver:" + saved.getId() + ":" + driver.getId());
         return saved;
     }
 
     public Ride reject(User user, UUID rideId) {
-        drivers.findByUser(user).orElseThrow(() -> new BusinessException("Driver profile not found"));
-        Ride ride = rides.findById(rideId).orElseThrow();
+        drivers.findByUser(user)
+                .orElseThrow(() -> new BusinessException("Driver profile not found", HttpStatus.FORBIDDEN));
+        Ride ride = rides.findById(rideId)
+                .orElseThrow(() -> new BusinessException("Ride not found", HttpStatus.NOT_FOUND));
         if (ride.getStatus() != RideStatus.REQUESTED) {
             throw new BusinessException("Only requested rides can be rejected");
         }
@@ -180,7 +221,8 @@ public class RideService {
 
     @Transactional
     public Ride complete(UUID rideId) {
-        Ride ride = rides.findById(rideId).orElseThrow();
+        Ride ride = rides.findById(rideId)
+                .orElseThrow(() -> new BusinessException("Ride not found", HttpStatus.NOT_FOUND));
         if (ride.getStatus() != RideStatus.STARTED) {
             throw new BusinessException("Only started rides can be completed");
         }
@@ -205,12 +247,25 @@ public class RideService {
         }
         Ride saved = rides.save(ride);
         notifications.create(ride.getRider().getUser(), "PUSH", "Ride completed", "Your SheGo ride is complete.");
+        notifications.create(ride.getRider().getUser(), Role.RIDER, NotificationType.RIDE,
+                "Ride completed",
+                "Your ride is complete. Payment and rating are ready.",
+                "Ride", saved.getId().toString(), "ride-complete",
+                "ride-completed-rider:" + saved.getId());
+        if (saved.getDriver() != null) {
+            notifications.create(saved.getDriver().getUser(), Role.DRIVER, NotificationType.RIDE,
+                    "Ride completed",
+                    "Ride completed successfully. Earnings will appear in your dashboard.",
+                    "Ride", saved.getId().toString(), "driver-earnings",
+                    "ride-completed-driver:" + saved.getId());
+        }
         return saved;
     }
 
     @Transactional
     public Ride cancel(UUID rideId) {
-        Ride ride = rides.findById(rideId).orElseThrow();
+        Ride ride = rides.findById(rideId)
+                .orElseThrow(() -> new BusinessException("Ride not found", HttpStatus.NOT_FOUND));
         if (ride.getStatus() == RideStatus.COMPLETED) {
             throw new BusinessException("Completed ride cannot be cancelled");
         }
@@ -220,12 +275,24 @@ public class RideService {
             DriverProfile driver = ride.getDriver();
             driver.setAvailable(true);
             drivers.save(driver);
+            notifications.create(driver.getUser(), Role.DRIVER, NotificationType.RIDE,
+                    "Ride cancelled",
+                    "The ride was cancelled.",
+                    "Ride", ride.getId().toString(), "driver-ride-history",
+                    "ride-cancelled-driver:" + ride.getId());
         }
-        return rides.save(ride);
+        Ride saved = rides.save(ride);
+        notifications.create(saved.getRider().getUser(), Role.RIDER, NotificationType.RIDE,
+                "Ride cancelled",
+                "Your ride was cancelled.",
+                "Ride", saved.getId().toString(), "ride-history",
+                "ride-cancelled-rider:" + saved.getId());
+        return saved;
     }
 
     public Ride get(UUID id) {
-        return rides.findById(id).orElseThrow();
+        return rides.findById(id)
+                .orElseThrow(() -> new BusinessException("Ride not found", HttpStatus.NOT_FOUND));
     }
 
     public RideDtos.RideDetailsResponse details(User user, UUID id) {
@@ -242,8 +309,24 @@ public class RideService {
         return new RideDtos.RideAcceptedResponse(ride.getId(), ride.getStatus(), details(ride, true, false), details(ride, false, true));
     }
 
+    public List<RideDtos.RideDetailsResponse> availableRequests(User user) {
+        DriverProfile driver = drivers.findByUser(user)
+                .orElseThrow(() -> new BusinessException("Driver profile not found", HttpStatus.FORBIDDEN));
+        if (!driver.isAdminApproved() || driver.getKycStatus() != KycStatus.APPROVED || user.getAccountStatus() != AccountStatus.ACTIVE) {
+            throw new BusinessException("Only verified women drivers can view ride requests");
+        }
+        if (!driver.isOnline() || !driver.isAvailable()) {
+            return List.of();
+        }
+        return rides.findByStatusOrderByCreatedAtDesc(RideStatus.REQUESTED).stream()
+                .filter(ride -> ride.getVehicleType() == driver.getVehicleType())
+                .map(ride -> details(ride, false, true))
+                .toList();
+    }
+
     public List<Ride> history(User user) {
-        RiderProfile rider = riders.findByUser(user).orElseThrow(() -> new BusinessException("Rider profile not found"));
+        RiderProfile rider = riders.findByUser(user)
+                .orElseThrow(() -> new BusinessException("Rider profile not found", HttpStatus.FORBIDDEN));
         return rides.findByRiderOrderByCreatedAtDesc(rider);
     }
 
@@ -252,8 +335,10 @@ public class RideService {
     }
 
     private Ride assignedRideForDriver(User user, UUID rideId) {
-        DriverProfile driver = drivers.findByUser(user).orElseThrow(() -> new BusinessException("Driver profile not found"));
-        Ride ride = rides.findById(rideId).orElseThrow();
+        DriverProfile driver = drivers.findByUser(user)
+                .orElseThrow(() -> new BusinessException("Driver profile not found", HttpStatus.FORBIDDEN));
+        Ride ride = rides.findById(rideId)
+                .orElseThrow(() -> new BusinessException("Ride not found", HttpStatus.NOT_FOUND));
         if (ride.getDriver() == null || !ride.getDriver().getId().equals(driver.getId())) {
             throw new BusinessException("Only assigned driver can update this ride");
         }
@@ -265,6 +350,7 @@ public class RideService {
         Vehicle vehicle = ride.getVehicle();
         RiderProfile rider = ride.getRider();
         RideDtos.ParticipantDriverDetails driverDetails = driver == null ? null : new RideDtos.ParticipantDriverDetails(
+                driver.getUser().getId(),
                 driver.getUser().getFullName(),
                 driver.getUser().getMobileNumber(),
                 temporaryUrl(driver.getProfilePhotoStorageKey()),
@@ -273,6 +359,7 @@ public class RideService {
                 ride.getVehicleModelSnapshot()
         );
         RideDtos.ParticipantRiderDetails riderDetails = forDriver ? new RideDtos.ParticipantRiderDetails(
+                rider.getUser().getId(),
                 rider.getUser().getFullName(),
                 rider.getUser().getMobileNumber(),
                 temporaryUrl(rider.getProfilePhotoStorageKey())
@@ -300,6 +387,10 @@ public class RideService {
 
     private String startOtpKey(UUID rideId) {
         return "ride:start-otp:" + rideId;
+    }
+
+    private String safeAddress(String address) {
+        return address == null || address.isBlank() ? "the pickup location" : address;
     }
 
     private boolean isLateNight() {

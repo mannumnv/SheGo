@@ -2,6 +2,7 @@ package com.shego.driver;
 
 import com.shego.common.AdminApprovalStatus;
 import com.shego.common.BaseEntity;
+import com.shego.common.DriverVerificationStatus;
 import com.shego.common.Gender;
 import com.shego.common.KycStatus;
 import com.shego.common.SensitiveStringConverter;
@@ -58,12 +59,27 @@ public class DriverProfile extends BaseEntity {
     private String licenseStorageKey;
     private String vehicleDocumentStorageKey;
     private String insuranceDocumentStorageKey;
+    @Column(columnDefinition = "text")
+    private String profilePhotoData;
+    @Column(columnDefinition = "text")
+    private String aadhaarDocumentData;
+    @Column(columnDefinition = "text")
+    private String licenseDocumentData;
+    @Column(columnDefinition = "text")
+    private String vehicleDocumentData;
+    @Column(columnDefinition = "text")
+    private String insuranceDocumentData;
 
     @Enumerated(EnumType.STRING)
     private KycStatus kycStatus = KycStatus.PENDING;
 
     @Enumerated(EnumType.STRING)
     private AdminApprovalStatus adminApprovalStatus = AdminApprovalStatus.PENDING;
+
+    @Enumerated(EnumType.STRING)
+    private DriverVerificationStatus verificationStatus = DriverVerificationStatus.INCOMPLETE;
+
+    private String verificationRejectionReason;
 
     private boolean available;
     private boolean online;

@@ -3,9 +3,13 @@ package com.shego.admin;
 import com.shego.common.AccountStatus;
 import com.shego.common.AdminApprovalStatus;
 import com.shego.common.KycStatus;
+import com.shego.common.DriverVerificationStatus;
+import com.shego.common.NotificationType;
+import com.shego.common.Role;
 import com.shego.common.VerificationType;
 import com.shego.driver.DriverProfileRepository;
 import com.shego.exception.BusinessException;
+import com.shego.notification.NotificationService;
 import com.shego.rider.RiderProfileRepository;
 import com.shego.driver.DriverDtos;
 import com.shego.driver.DriverProfile;
@@ -26,11 +30,14 @@ public class AdminService {
     private final DriverProfileRepository driverProfiles;
     private final RiderProfileRepository riderProfiles;
     private final UserRepository users;
+    private final NotificationService notifications;
 
-    public AdminService(DriverProfileRepository driverProfiles, RiderProfileRepository riderProfiles, UserRepository users) {
+    public AdminService(DriverProfileRepository driverProfiles, RiderProfileRepository riderProfiles, UserRepository users,
+                        NotificationService notifications) {
         this.driverProfiles = driverProfiles;
         this.riderProfiles = riderProfiles;
         this.users = users;
+        this.notifications = notifications;
     }
 
     public List<AdminDtos.PendingDriverVerificationResponse> pendingDriverVerifications() {
@@ -102,14 +109,24 @@ public class AdminService {
                 .orElseThrow(() -> new BusinessException("Driver not found", HttpStatus.NOT_FOUND));
         log.debug("Driver lookup completed: driverId={}, userId={}, kycStatus={}, adminApprovalStatus={}, adminApproved={}",
                 driver.getId(), driver.getUser().getId(), driver.getKycStatus(), driver.getAdminApprovalStatus(), driver.isAdminApproved());
+        if (driver.getVerificationStatus() != DriverVerificationStatus.PENDING_VERIFICATION) {
+            throw new BusinessException("Driver documents must be submitted before approval");
+        }
         driver.setKycStatus(KycStatus.APPROVED);
         driver.setAdminApprovalStatus(AdminApprovalStatus.APPROVED);
         driver.setAdminApproved(true);
+        driver.setVerificationStatus(DriverVerificationStatus.APPROVED);
+        driver.setVerificationRejectionReason(null);
         driver.setAvailable(false);
         driver.setOnline(false);
         driver.getUser().setAccountStatus(AccountStatus.ACTIVE);
         users.save(driver.getUser());
         var saved = driverProfiles.save(driver);
+        notifications.create(saved.getUser(), Role.DRIVER, NotificationType.APPROVAL,
+                "Driver verification approved",
+                "Your documents were approved by Admin. You can now go active for rides.",
+                "DriverProfile", saved.getId().toString(), "driver-profile",
+                "driver-approved:" + saved.getId());
         log.debug("Driver approval response return: driverId={}, kycStatus={}, adminApprovalStatus={}, adminApproved={}",
                 saved.getId(), saved.getKycStatus(), saved.getAdminApprovalStatus(), saved.isAdminApproved());
         return saved;
@@ -123,11 +140,39 @@ public class AdminService {
         driver.setKycStatus(KycStatus.REJECTED);
         driver.setAdminApprovalStatus(AdminApprovalStatus.REJECTED);
         driver.setAdminApproved(false);
+        driver.setVerificationStatus(DriverVerificationStatus.REJECTED);
+        driver.setVerificationRejectionReason(reason == null || reason.isBlank() ? "Admin rejected driver verification." : reason);
         driver.setAvailable(false);
         driver.setOnline(false);
         var saved = driverProfiles.save(driver);
+        notifications.create(saved.getUser(), Role.DRIVER, NotificationType.REJECTION,
+                "Driver verification rejected",
+                saved.getVerificationRejectionReason(),
+                "DriverProfile", saved.getId().toString(), "driver-documents",
+                "driver-rejected:" + saved.getId());
         log.debug("Driver rejection response return: driverId={}, kycStatus={}, adminApprovalStatus={}",
                 saved.getId(), saved.getKycStatus(), saved.getAdminApprovalStatus());
+        return DriverDtos.DriverProfileResponse.from(saved);
+    }
+
+    @Transactional
+    public DriverDtos.DriverProfileResponse requestDriverResubmission(UUID driverId, String reason) {
+        var driver = driverProfiles.findByIdWithUser(driverId)
+                .orElseThrow(() -> new BusinessException("Driver not found", HttpStatus.NOT_FOUND));
+        driver.setVerificationStatus(DriverVerificationStatus.RESUBMISSION_REQUIRED);
+        driver.setVerificationRejectionReason(reason == null || reason.isBlank()
+                ? "Admin requested updated documents." : reason);
+        driver.setKycStatus(KycStatus.PENDING);
+        driver.setAdminApprovalStatus(AdminApprovalStatus.PENDING);
+        driver.setAdminApproved(false);
+        driver.setAvailable(false);
+        driver.setOnline(false);
+        var saved = driverProfiles.save(driver);
+        notifications.create(saved.getUser(), Role.DRIVER, NotificationType.ACTION_REQUIRED,
+                "Document re-submission required",
+                saved.getVerificationRejectionReason(),
+                "DriverProfile", saved.getId().toString(), "driver-documents",
+                "driver-resubmission-required:" + saved.getId());
         return DriverDtos.DriverProfileResponse.from(saved);
     }
 }

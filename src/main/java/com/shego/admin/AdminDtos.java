@@ -1,6 +1,7 @@
 package com.shego.admin;
 
 import com.shego.common.AdminApprovalStatus;
+import com.shego.common.DriverVerificationStatus;
 import com.shego.common.Gender;
 import com.shego.common.KycStatus;
 import com.shego.common.VehicleType;
@@ -41,10 +42,21 @@ public class AdminDtos {
             @Schema(example = "PENDING") KycStatus kycStatus,
             @Schema(example = "PENDING") AdminApprovalStatus adminApprovalStatus,
             @Schema(example = "false") boolean adminApproved,
+            @Schema(example = "PENDING_VERIFICATION") DriverVerificationStatus verificationStatus,
+            String verificationRejectionReason,
             @Schema(example = "false") boolean available,
             @Schema(example = "false") boolean online,
             @Schema(example = "1234") String aadhaarLast4,
-            @Schema(example = "profile-photos/driver-123.png") String profilePhotoStorageKey
+            @Schema(example = "profile-photos/driver-123.png") String profilePhotoStorageKey,
+            String aadhaarStorageKey,
+            String licenseStorageKey,
+            String vehicleDocumentStorageKey,
+            String insuranceDocumentStorageKey,
+            String profilePhotoData,
+            String aadhaarDocumentData,
+            String licenseDocumentData,
+            String vehicleDocumentData,
+            String insuranceDocumentData
     ) {
         public static PendingDriverVerificationResponse from(DriverProfileRepository.PendingDriverVerificationRow row) {
             return new PendingDriverVerificationResponse(
@@ -59,10 +71,21 @@ public class AdminDtos {
                     parseEnum(KycStatus.class, row.getKycStatus()),
                     parseEnum(AdminApprovalStatus.class, row.getAdminApprovalStatus()),
                     Boolean.TRUE.equals(row.getAdminApproved()),
+                    parseEnum(DriverVerificationStatus.class, row.getVerificationStatus()),
+                    row.getVerificationRejectionReason(),
                     Boolean.TRUE.equals(row.getAvailable()),
                     Boolean.TRUE.equals(row.getOnline()),
                     row.getAadhaarLast4(),
-                    row.getProfilePhotoStorageKey()
+                    row.getProfilePhotoStorageKey(),
+                    row.getAadhaarStorageKey(),
+                    row.getLicenseStorageKey(),
+                    row.getVehicleDocumentStorageKey(),
+                    row.getInsuranceDocumentStorageKey(),
+                    row.getProfilePhotoData(),
+                    row.getAadhaarDocumentData(),
+                    row.getLicenseDocumentData(),
+                    row.getVehicleDocumentData(),
+                    row.getInsuranceDocumentData()
             );
         }
 

@@ -47,16 +47,25 @@ public interface DriverProfileRepository extends JpaRepository<DriverProfile, UU
                 dp.kyc_status as "kycStatus",
                 dp.admin_approval_status as "adminApprovalStatus",
                 dp.admin_approved as "adminApproved",
+                dp.verification_status as "verificationStatus",
+                dp.verification_rejection_reason as "verificationRejectionReason",
                 dp.available as "available",
                 dp.online as "online",
                 dp.aadhaar_last4 as "aadhaarLast4",
-                dp.profile_photo_storage_key as "profilePhotoStorageKey"
+                dp.profile_photo_storage_key as "profilePhotoStorageKey",
+                dp.aadhaar_storage_key as "aadhaarStorageKey",
+                dp.license_storage_key as "licenseStorageKey",
+                dp.vehicle_document_storage_key as "vehicleDocumentStorageKey",
+                dp.insurance_document_storage_key as "insuranceDocumentStorageKey",
+                dp.profile_photo_data as "profilePhotoData",
+                dp.aadhaar_document_data as "aadhaarDocumentData",
+                dp.license_document_data as "licenseDocumentData",
+                dp.vehicle_document_data as "vehicleDocumentData",
+                dp.insurance_document_data as "insuranceDocumentData"
             from driver_profile dp
             join users u on dp.user_id = u.id
             left join vehicle v on v.driver_id = dp.id and v.active = true
-            where dp.kyc_status = 'PENDING'
-               or dp.admin_approval_status = 'PENDING'
-               or dp.admin_approved = false
+            where dp.verification_status = 'PENDING_VERIFICATION'
             order by dp.id, v.created_at desc
             """, nativeQuery = true)
     List<PendingDriverVerificationRow> findPendingVerificationRows();
@@ -73,9 +82,20 @@ public interface DriverProfileRepository extends JpaRepository<DriverProfile, UU
         String getKycStatus();
         String getAdminApprovalStatus();
         Boolean getAdminApproved();
+        String getVerificationStatus();
+        String getVerificationRejectionReason();
         Boolean getAvailable();
         Boolean getOnline();
         String getAadhaarLast4();
         String getProfilePhotoStorageKey();
+        String getAadhaarStorageKey();
+        String getLicenseStorageKey();
+        String getVehicleDocumentStorageKey();
+        String getInsuranceDocumentStorageKey();
+        String getProfilePhotoData();
+        String getAadhaarDocumentData();
+        String getLicenseDocumentData();
+        String getVehicleDocumentData();
+        String getInsuranceDocumentData();
     }
 }

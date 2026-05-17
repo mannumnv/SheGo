@@ -22,6 +22,10 @@ export class RiderClient {
     return this.request.get(apiUrl('/api/riders/profile'), { headers: auth(token) });
   }
 
+  active(token: string, active: boolean) {
+    return this.request.put(apiUrl('/api/riders/active'), { headers: auth(token), data: { active } });
+  }
+
   verifyGuardian(token: string, payload: Record<string, unknown>) {
     return this.request.post(apiUrl('/api/riders/verify-guardian'), { headers: auth(token), data: payload });
   }
