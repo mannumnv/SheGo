@@ -16,6 +16,8 @@ import com.shego.driver.DriverProfile;
 import com.shego.user.UserRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -50,6 +52,20 @@ public class AdminService {
                 .toList();
         log.debug("Pending driver DTO mapping completed: {}", response.size());
         return response;
+    }
+
+    public Page<AdminDtos.AdminDriverResponse> drivers(int page, int size) {
+        int safePage = Math.max(0, page);
+        int safeSize = Math.min(Math.max(1, size), 50);
+        return driverProfiles
+                .findAllWithUser(PageRequest.of(safePage, safeSize))
+                .map(AdminDtos.AdminDriverResponse::from);
+    }
+
+    public AdminDtos.AdminDriverResponse driver(UUID driverId) {
+        return driverProfiles.findByIdWithUser(driverId)
+                .map(AdminDtos.AdminDriverResponse::from)
+                .orElseThrow(() -> new BusinessException("Driver not found", HttpStatus.NOT_FOUND));
     }
 
     @Transactional
@@ -109,13 +125,22 @@ public class AdminService {
                 .orElseThrow(() -> new BusinessException("Driver not found", HttpStatus.NOT_FOUND));
         log.debug("Driver lookup completed: driverId={}, userId={}, kycStatus={}, adminApprovalStatus={}, adminApproved={}",
                 driver.getId(), driver.getUser().getId(), driver.getKycStatus(), driver.getAdminApprovalStatus(), driver.isAdminApproved());
-        if (driver.getVerificationStatus() != DriverVerificationStatus.PENDING_VERIFICATION) {
-            throw new BusinessException("Driver documents must be submitted before approval");
+        boolean documentsComplete = documentsComplete(driver);
+        if (driver.getVerificationStatus() == DriverVerificationStatus.REJECTED) {
+            throw new BusinessException("Rejected driver must re-submit documents before approval");
         }
-        driver.setKycStatus(KycStatus.APPROVED);
+        if (driver.getVerificationStatus() == DriverVerificationStatus.RESUBMISSION_REQUIRED) {
+            throw new BusinessException("Driver must re-submit requested documents before approval");
+        }
         driver.setAdminApprovalStatus(AdminApprovalStatus.APPROVED);
         driver.setAdminApproved(true);
-        driver.setVerificationStatus(DriverVerificationStatus.APPROVED);
+        if (documentsComplete && driver.getVerificationStatus() == DriverVerificationStatus.PENDING_VERIFICATION) {
+            driver.setKycStatus(KycStatus.APPROVED);
+            driver.setVerificationStatus(DriverVerificationStatus.APPROVED);
+        } else {
+            driver.setKycStatus(KycStatus.PENDING);
+            driver.setVerificationStatus(DriverVerificationStatus.INCOMPLETE);
+        }
         driver.setVerificationRejectionReason(null);
         driver.setAvailable(false);
         driver.setOnline(false);
@@ -124,7 +149,7 @@ public class AdminService {
         var saved = driverProfiles.save(driver);
         notifications.create(saved.getUser(), Role.DRIVER, NotificationType.APPROVAL,
                 "Driver verification approved",
-                "Your documents were approved by Admin. You can now go active for rides.",
+                "Your driver profile has been approved. Please upload required documents within 24 hours to activate your profile.",
                 "DriverProfile", saved.getId().toString(), "driver-profile",
                 "driver-approved:" + saved.getId());
         log.debug("Driver approval response return: driverId={}, kycStatus={}, adminApprovalStatus={}, adminApproved={}",
@@ -174,5 +199,17 @@ public class AdminService {
                 "DriverProfile", saved.getId().toString(), "driver-documents",
                 "driver-resubmission-required:" + saved.getId());
         return DriverDtos.DriverProfileResponse.from(saved);
+    }
+
+    private boolean documentsComplete(DriverProfile driver) {
+        return (hasValue(driver.getProfilePhotoStorageKey()) || hasValue(driver.getProfilePhotoData()))
+                && (hasValue(driver.getAadhaarStorageKey()) || hasValue(driver.getAadhaarDocumentData()))
+                && (hasValue(driver.getLicenseStorageKey()) || hasValue(driver.getLicenseDocumentData()))
+                && (hasValue(driver.getVehicleDocumentStorageKey()) || hasValue(driver.getVehicleDocumentData()))
+                && (hasValue(driver.getInsuranceDocumentStorageKey()) || hasValue(driver.getInsuranceDocumentData()));
+    }
+
+    private boolean hasValue(String value) {
+        return value != null && !value.isBlank();
     }
 }

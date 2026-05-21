@@ -17,11 +17,13 @@ import com.shego.user.UserDtos;
 import com.shego.user.UserRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.data.domain.Page;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -69,6 +71,19 @@ public class AdminController {
     @GetMapping("/users")
     ApiResponse<java.util.List<UserDtos.UserResponse>> users() {
         return ApiResponse.ok("Users", this.users.findAll().stream().map(UserDtos.UserResponse::from).toList());
+    }
+
+    @GetMapping("/drivers")
+    ApiResponse<Page<AdminDtos.AdminDriverResponse>> drivers(@RequestParam(defaultValue = "0") int page,
+                                                             @RequestParam(defaultValue = "10") int size) {
+        logger.debug("AdminController entry: GET /api/admin/drivers page={}, size={}", page, size);
+        return ApiResponse.ok("Drivers", adminService.drivers(page, size));
+    }
+
+    @GetMapping("/drivers/{id}")
+    ApiResponse<AdminDtos.AdminDriverResponse> driver(@PathVariable UUID id) {
+        logger.debug("AdminController entry: GET /api/admin/drivers/{id} driverId={}", id);
+        return ApiResponse.ok("Driver details", adminService.driver(id));
     }
 
     @PostMapping("/users/{id}/suspend")
@@ -123,6 +138,19 @@ public class AdminController {
         logger.debug("AdminController return: driver approved driverId={}, kycStatus={}, adminApprovalStatus={}, adminApproved={}",
                 response.driverId(), response.kycStatus(), response.adminApprovalStatus(), response.adminApproved());
         return ApiResponse.ok("Driver approved successfully", response);
+    }
+
+    @PostMapping("/drivers/{id}/reject")
+    ApiResponse<DriverDtos.DriverProfileResponse> rejectDriver(@PathVariable UUID id,
+                                                               @RequestBody(required = false) Map<String, String> body,
+                                                               @RequestParam(required = false) String reason) {
+        String resolvedReason = reason;
+        if ((resolvedReason == null || resolvedReason.isBlank()) && body != null) {
+            resolvedReason = body.get("reason");
+        }
+        var response = adminService.rejectDriverVerification(id, resolvedReason);
+        log("REJECT_DRIVER", "DriverProfile", id.toString(), resolvedReason);
+        return ApiResponse.ok("Driver rejected", response);
     }
 
     @GetMapping("/rides/active")

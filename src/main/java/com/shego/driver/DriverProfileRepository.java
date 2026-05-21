@@ -1,6 +1,8 @@
 package com.shego.driver;
 
 import com.shego.user.User;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 
@@ -12,6 +14,15 @@ public interface DriverProfileRepository extends JpaRepository<DriverProfile, UU
     Optional<DriverProfile> findByUser(User user);
     List<DriverProfile> findByKycStatus(com.shego.common.KycStatus status);
     List<DriverProfile> findByAdminApprovalStatus(com.shego.common.AdminApprovalStatus status);
+
+    @Query(value = """
+            select d
+            from DriverProfile d
+            join fetch d.user u
+            order by d.createdAt desc
+            """,
+            countQuery = "select count(d) from DriverProfile d")
+    Page<DriverProfile> findAllWithUser(Pageable pageable);
 
     @Query("""
             select d

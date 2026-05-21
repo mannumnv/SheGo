@@ -4,7 +4,7 @@ FLUTTER_DIR := shego_flutter
 IMAGE_NAME ?= shego-backend
 IMAGE_TAG ?= latest
 
-.PHONY: help deps backend frontend backend-build docker-build docker-run flutter-web flutter-apk flutter-android-bundle stop
+.PHONY: help deps backend frontend backend-build docker-build docker-run e2e flutter-web flutter-apk flutter-android-bundle stop
 
 help:
 	@echo "SheGo simple commands:"
@@ -14,6 +14,7 @@ help:
 	@echo "  make backend-build           Build backend jar"
 	@echo "  make docker-build            Build backend Docker image"
 	@echo "  make docker-run              Run backend Docker image"
+	@echo "  make e2e                     Run Playwright API/E2E tests"
 	@echo "  make flutter-web             Build Flutter web app"
 	@echo "  make flutter-apk             Build Android APK"
 	@echo "  make flutter-android-bundle  Build Android Play Store bundle"
@@ -43,6 +44,9 @@ docker-build:
 # Docker image run karega, .env file se environment variables lega.
 docker-run:
 	docker run --rm -p 8080:8080 --env-file .env $(IMAGE_NAME):$(IMAGE_TAG)
+
+e2e:
+	@cd tests && npx playwright test
 
 # Flutter web production build banayega.
 flutter-web:

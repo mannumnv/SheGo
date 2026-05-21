@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
@@ -11,6 +12,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:http/http.dart' as http;
 
 const shegoLogoAsset = 'assets/images/shego_logo.png';
+const womanScootyAsset = 'assets/images/woman_scooty.png';
 const googleMapsApiKey =
     String.fromEnvironment('GOOGLE_MAPS_API_KEY', defaultValue: '');
 
@@ -44,79 +46,537 @@ class SplashScreen extends StatefulWidget {
   State<SplashScreen> createState() => _SplashScreenState();
 }
 
-class _SplashScreenState extends State<SplashScreen> {
-  Timer? _navigationTimer;
+class _SplashScreenState extends State<SplashScreen>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
 
   @override
   void initState() {
     super.initState();
-    _navigationTimer = Timer(const Duration(milliseconds: 2600), () async {
-      if (!mounted) return;
-      final destination = await restoreDestination();
-      if (!mounted) return;
-      Navigator.of(context)
-          .pushReplacement(MaterialPageRoute(builder: (_) => destination));
-    });
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 8200),
+    )
+      ..addStatusListener((status) {
+        if (status == AnimationStatus.completed) {
+          _openNextScreen();
+        }
+      })
+      ..forward();
+  }
+
+  Future<void> _openNextScreen() async {
+    final destination = await restoreDestination();
+    if (!mounted) return;
+    Navigator.of(context)
+        .pushReplacement(MaterialPageRoute(builder: (_) => destination));
   }
 
   @override
   void dispose() {
-    _navigationTimer?.cancel();
+    _controller.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    final size = MediaQuery.sizeOf(context);
+    final shortestSide = size.shortestSide;
+    final logoSize = shortestSide.clamp(118.0, 170.0);
+    final riderSize = (size.width * 0.14).clamp(42.0, 58.0);
+    final roadRadiusX = (logoSize * 0.92).clamp(106.0, 146.0);
+    final roadRadiusY = (logoSize * 0.30).clamp(36.0, 50.0);
     return Scaffold(
-      body: Container(
-        width: double.infinity,
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [Color(0xFF7F557E), Color(0xFFD78AB4), Color(0xFFFF4FA1)],
+      body: AnimatedBuilder(
+        animation: _controller,
+        builder: (context, _) {
+          final progress = _controller.value;
+          final firstTextOpacity =
+              _fade(progress, 0.00, 0.12) * (1 - _fade(progress, 0.13, 0.20));
+          final logoOpacity = _fade(progress, 0.18, 0.28);
+          final riderOpacity = _fade(progress, 0.26, 0.34);
+          final finalTextOpacity = _fade(progress, 0.88, 0.98);
+          final center = Offset(size.width / 2, size.height / 2 - 20);
+          final orbitT = ((progress - 0.34) / 0.34).clamp(0.0, 1.0);
+          final angle = math.pi + (math.pi * 4 * orbitT);
+          final orbitPosition = Offset(
+            center.dx + math.cos(angle) * roadRadiusX,
+            center.dy + math.sin(angle) * roadRadiusY,
+          );
+          final parked = Offset(center.dx, center.dy + logoSize * 0.88);
+          final descendT = _easeSegment(progress, 0.68, 0.78);
+          final driveT = _easeSegment(progress, 0.78, 0.88);
+          final driveStart = Offset(-riderSize, parked.dy);
+          final driveStop = Offset(center.dx, parked.dy);
+          final orbiting = progress >= 0.34 && progress < 0.68;
+          final logoBounds = Rect.fromCenter(
+            center: center,
+            width: logoSize + riderSize * 0.6,
+            height: logoSize + riderSize * 0.35,
+          );
+          final crossingBehindLogo = orbiting &&
+              (math.sin(angle) < -0.10 || logoBounds.contains(orbitPosition));
+          Offset riderPosition = orbitPosition;
+          if (progress >= 0.68 && progress < 0.78) {
+            riderPosition = Offset.lerp(orbitPosition, parked, descendT)!;
+          } else if (progress >= 0.78) {
+            riderPosition = Offset.lerp(driveStart, driveStop, driveT)!;
+          }
+
+          return Container(
+            width: double.infinity,
+            height: double.infinity,
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  Color(0xFF050505),
+                  Color(0xFF18080A),
+                  Color(0xFF7A0E16),
+                  Color(0xFF240608),
+                ],
+                stops: [0.0, 0.34, 0.70, 1.0],
+              ),
+            ),
+            child: Stack(
+              children: [
+                Positioned.fill(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: RadialGradient(
+                        center: const Alignment(0.42, -0.34),
+                        radius: 0.88,
+                        colors: [
+                          const Color(0xFFE3262E).withValues(alpha: 0.22),
+                          Colors.transparent,
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                Positioned.fill(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.20),
+                    ),
+                  ),
+                ),
+                Positioned.fill(
+                  child: CustomPaint(
+                    painter: _SplashGlowPainter(progress: progress),
+                  ),
+                ),
+                Positioned.fill(
+                  child: Opacity(
+                    opacity: logoOpacity,
+                    child: CustomPaint(
+                      painter: _SplashRoadPainter(
+                        center: center,
+                        radiusX: roadRadiusX,
+                        radiusY: roadRadiusY,
+                        logoSize: logoSize,
+                      ),
+                    ),
+                  ),
+                ),
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  top: size.height * 0.32,
+                  child: Opacity(
+                    opacity: firstTextOpacity,
+                    child: const _SplashTagline(text: 'Wo Chali....'),
+                  ),
+                ),
+                Positioned(
+                  left: center.dx - logoSize / 2,
+                  top: center.dy - logoSize / 2,
+                  child: Opacity(
+                    opacity: logoOpacity,
+                    child: Container(
+                      width: logoSize,
+                      height: logoSize,
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.20),
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.white.withValues(alpha: 0.30),
+                            blurRadius: 46,
+                            spreadRadius: 8,
+                          ),
+                        ],
+                      ),
+                      child: ClipOval(
+                        child: Image.asset(shegoLogoAsset, fit: BoxFit.cover),
+                      ),
+                    ),
+                  ),
+                ),
+                if (progress > 0.26)
+                  Positioned(
+                    left: riderPosition.dx - riderSize / 2,
+                    top: riderPosition.dy - riderSize / 2,
+                    child: Opacity(
+                      opacity: crossingBehindLogo ? 0 : riderOpacity,
+                      child: SizedBox(
+                        width: riderSize,
+                        height: riderSize,
+                        child: Image.asset(
+                          womanScootyAsset,
+                          fit: BoxFit.contain,
+                          filterQuality: FilterQuality.high,
+                        ),
+                      ),
+                    ),
+                  ),
+                Positioned(
+                  left: size.width * 0.18,
+                  right: size.width * 0.18,
+                  top: parked.dy + riderSize * 0.45,
+                  child: Opacity(
+                    opacity: _fade(progress, 0.76, 0.84),
+                    child: Container(
+                      height: 2,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.42),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                    ),
+                  ),
+                ),
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  top: parked.dy + riderSize * 0.82,
+                  child: Opacity(
+                    opacity: finalTextOpacity,
+                    child: const _SplashTagline(text: 'Wo Chali....'),
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  double _fade(double value, double start, double end) =>
+      ((value - start) / (end - start)).clamp(0.0, 1.0);
+
+  double _easeSegment(double value, double start, double end) {
+    final t = _fade(value, start, end);
+    return Curves.easeInOutCubic.transform(t);
+  }
+}
+
+class _SplashTagline extends StatelessWidget {
+  const _SplashTagline({required this.text});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final fontSize =
+        (MediaQuery.sizeOf(context).width * 0.07).clamp(19.0, 28.0);
+    return Text(
+      text,
+      textAlign: TextAlign.center,
+      style: TextStyle(
+        color: const Color(0xFFFFF4F6),
+        fontSize: fontSize,
+        fontWeight: FontWeight.w800,
+        letterSpacing: 0.7,
+        shadows: const [
+          Shadow(
+            color: Color(0xCC000000),
+            blurRadius: 18,
+            offset: Offset(0, 7),
+          ),
+          Shadow(
+            color: Color(0x99B20F1C),
+            blurRadius: 26,
+            offset: Offset(0, 0),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SplashRoadPainter extends CustomPainter {
+  const _SplashRoadPainter({
+    required this.center,
+    required this.radiusX,
+    required this.radiusY,
+    required this.logoSize,
+  });
+
+  final Offset center;
+  final double radiusX;
+  final double radiusY;
+  final double logoSize;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final roadShadow = Paint()
+      ..color = Colors.black.withValues(alpha: 0.20)
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round
+      ..strokeWidth = 8;
+    final roadPaint = Paint()
+      ..color = const Color(0xFFFFD7DC).withValues(alpha: 0.38)
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round
+      ..strokeWidth = 5;
+    final lanePaint = Paint()
+      ..color = Colors.white.withValues(alpha: 0.50)
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round
+      ..strokeWidth = 1.2;
+
+    final logoHideHalfWidth = logoSize * 0.48;
+    for (final segment in _frontRoadSegments(logoHideHalfWidth)) {
+      canvas.drawPath(segment, roadShadow);
+      canvas.drawPath(segment, roadPaint);
+      canvas.drawPath(segment, lanePaint);
+    }
+  }
+
+  List<Path> _frontRoadSegments(double logoHideHalfWidth) {
+    final paths = <Path>[];
+    Path? current;
+    for (var i = 0; i <= 160; i++) {
+      final angle = math.pi * i / 160;
+      final point = Offset(
+        center.dx + math.cos(angle) * radiusX,
+        center.dy + math.sin(angle) * radiusY,
+      );
+      final hiddenBehindLogo = (point.dx - center.dx).abs() < logoHideHalfWidth;
+      if (hiddenBehindLogo) {
+        if (current != null) {
+          paths.add(current);
+          current = null;
+        }
+        continue;
+      }
+      current ??= Path()..moveTo(point.dx, point.dy);
+      current.lineTo(point.dx, point.dy);
+    }
+    if (current != null) paths.add(current);
+    return paths;
+  }
+
+  @override
+  bool shouldRepaint(covariant _SplashRoadPainter oldDelegate) =>
+      oldDelegate.center != center ||
+      oldDelegate.radiusX != radiusX ||
+      oldDelegate.radiusY != radiusY ||
+      oldDelegate.logoSize != logoSize;
+}
+
+class _SplashGlowPainter extends CustomPainter {
+  const _SplashGlowPainter({required this.progress});
+
+  final double progress;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..shader = RadialGradient(
+        colors: [
+          const Color(0xFFFFD7DC).withValues(alpha: 0.16),
+          const Color(0xFFB20F1C).withValues(alpha: 0.08),
+          Colors.transparent,
+        ],
+      ).createShader(Rect.fromCircle(
+          center: Offset(size.width * 0.5, size.height * 0.44),
+          radius: size.shortestSide * (0.34 + progress * 0.08)));
+    canvas.drawRect(Offset.zero & size, paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant _SplashGlowPainter oldDelegate) =>
+      oldDelegate.progress != progress;
+}
+
+class BrandingMark extends StatelessWidget {
+  const BrandingMark({super.key});
+
+  @override
+  Widget build(BuildContext context) => TweenAnimationBuilder<double>(
+        tween: Tween(begin: 0, end: 1),
+        duration: const Duration(milliseconds: 900),
+        curve: Curves.easeOutCubic,
+        builder: (context, value, child) => Opacity(
+          opacity: value,
+          child: Transform.translate(
+            offset: Offset(0, 16 * (1 - value)),
+            child: child,
           ),
         ),
-        child: SafeArea(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
+        child: Container(
+          width: double.infinity,
+          constraints: const BoxConstraints(maxWidth: 360),
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(8),
+            gradient: const LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                Color(0xFF050505),
+                Color(0xFF18080A),
+                Color(0xFF7A0E16),
+                Color(0xFF240608),
+              ],
+              stops: [0.0, 0.34, 0.72, 1.0],
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFF7A0E16).withValues(alpha: 0.24),
+                blurRadius: 30,
+                offset: const Offset(0, 16),
+              ),
+            ],
+          ),
+          child: Stack(
             children: [
-              Container(
-                width: 210,
-                height: 210,
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.16),
-                  shape: BoxShape.circle,
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.white.withValues(alpha: 0.28),
-                      blurRadius: 42,
-                      spreadRadius: 6,
+              Positioned.fill(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(8),
+                    gradient: RadialGradient(
+                      center: const Alignment(0.45, -0.45),
+                      radius: 0.92,
+                      colors: [
+                        const Color(0xFFE3262E).withValues(alpha: 0.18),
+                        Colors.transparent,
+                      ],
                     ),
-                  ],
-                ),
-                child: ClipOval(
-                  child: Image.asset(shegoLogoAsset, fit: BoxFit.cover),
+                  ),
                 ),
               ),
-              const SizedBox(height: 28),
-              const Text(
-                'Ride Freely. Ride Safely.',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 24,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 0,
-                ),
+              Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    'SheGo',
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 0,
+                      color: const Color(0xFFFFF4F6),
+                      shadows: const [
+                        Shadow(
+                          color: Color(0xCC000000),
+                          blurRadius: 18,
+                          offset: Offset(0, 6),
+                        ),
+                        Shadow(
+                          color: Color(0x99B20F1C),
+                          blurRadius: 26,
+                          offset: Offset(0, 0),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  const Align(
+                    alignment: Alignment.center,
+                    child: SizedBox(
+                      width: 210,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            'Wo Chali....',
+                            style: TextStyle(
+                              color: Color(0xFFFFD8E4),
+                              fontWeight: FontWeight.w700,
+                              fontSize: 14,
+                              letterSpacing: 0.1,
+                              shadows: [
+                                Shadow(
+                                  color: Color(0xCC000000),
+                                  blurRadius: 12,
+                                  offset: Offset(0, 4),
+                                ),
+                              ],
+                            ),
+                          ),
+                          SizedBox(width: 6),
+                          Image(
+                            image: AssetImage(womanScootyAsset),
+                            width: 34,
+                            height: 28,
+                            fit: BoxFit.contain,
+                            filterQuality: FilterQuality.high,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  const Center(
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Text(
+                            'Har safar, ',
+                            style: TextStyle(
+                              color: Color(0xFFFFF4F6),
+                              fontWeight: FontWeight.w800,
+                              fontSize: 22,
+                              letterSpacing: 0,
+                              shadows: [
+                                Shadow(
+                                  color: Color(0xCC000000),
+                                  blurRadius: 14,
+                                  offset: Offset(0, 5),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Text(
+                            'Befikar',
+                            style: TextStyle(
+                              color: Color(0xFFFFD8E4),
+                              fontWeight: FontWeight.w800,
+                              fontSize: 22,
+                              letterSpacing: 0,
+                              shadows: [
+                                Shadow(
+                                  color: Color(0xCC000000),
+                                  blurRadius: 14,
+                                  offset: Offset(0, 5),
+                                ),
+                                Shadow(
+                                  color: Color(0x99E3262E),
+                                  blurRadius: 18,
+                                  offset: Offset(0, 0),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
         ),
-      ),
-    );
-  }
+      );
 }
 
 class SheGoApi {
@@ -370,8 +830,16 @@ class NotificationApi {
 class AdminApi {
   Future<dynamic> pendingDrivers() =>
       api.get('/api/admin/pending-driver-kyc', tokenOverride: adminToken);
+  Future<dynamic> drivers({int page = 0, int size = 10}) =>
+      api.get('/api/admin/drivers?page=$page&size=$size',
+          tokenOverride: adminToken);
+  Future<dynamic> driver(String driverId) =>
+      api.get('/api/admin/drivers/$driverId', tokenOverride: adminToken);
   Future<dynamic> approveDriver(String driverId) =>
       api.post('/api/admin/drivers/$driverId/approve', {},
+          tokenOverride: adminToken);
+  Future<dynamic> rejectDriver(String driverId, String reason) =>
+      api.post('/api/admin/drivers/$driverId/reject', {'reason': reason},
           tokenOverride: adminToken);
 }
 
@@ -488,134 +956,212 @@ class RoleSelectionScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
     return Scaffold(
-      body: SafeArea(
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            return SingleChildScrollView(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 28),
-              child: ConstrainedBox(
-                constraints:
-                    BoxConstraints(minHeight: constraints.maxHeight - 56),
-                child: Center(
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 480),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        Center(
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: RadialGradient(
+            center: Alignment.center,
+            radius: 1.15,
+            colors: [
+              Color(0xFF4A0D1A),
+              Color(0xFF1C1C1C),
+              Color(0xFF111111),
+            ],
+            stops: [0.0, 0.58, 1.0],
+          ),
+        ),
+        child: Stack(
+          children: [
+            Positioned.fill(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      Colors.white.withValues(alpha: 0.04),
+                      Colors.transparent,
+                      Colors.black.withValues(alpha: 0.20),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            SafeArea(
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  return SingleChildScrollView(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 20, vertical: 28),
+                    child: ConstrainedBox(
+                      constraints:
+                          BoxConstraints(minHeight: constraints.maxHeight - 56),
+                      child: Center(
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 480),
                           child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
-                              ClipOval(
-                                child: Image.asset(
-                                  shegoLogoAsset,
-                                  width: 132,
-                                  height: 132,
-                                  fit: BoxFit.cover,
+                              Stack(
+                                alignment: Alignment.center,
+                                children: [
+                                  Container(
+                                    width: 320,
+                                    height: 250,
+                                    decoration: BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: const Color(0xFFE3262E)
+                                              .withValues(alpha: 0.16),
+                                          blurRadius: 70,
+                                          spreadRadius: 8,
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  const Center(child: BrandingMark()),
+                                ],
+                              ),
+                              const SizedBox(height: 24),
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(8),
+                                child: BackdropFilter(
+                                  filter: ui.ImageFilter.blur(
+                                      sigmaX: 16, sigmaY: 16),
+                                  child: Container(
+                                    padding: const EdgeInsets.all(16),
+                                    decoration: BoxDecoration(
+                                      color:
+                                          Colors.white.withValues(alpha: 0.11),
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(
+                                        color: Colors.white
+                                            .withValues(alpha: 0.18),
+                                      ),
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: Colors.black
+                                              .withValues(alpha: 0.24),
+                                          blurRadius: 32,
+                                          offset: const Offset(0, 18),
+                                        ),
+                                      ],
+                                    ),
+                                    child: Theme(
+                                      data: Theme.of(context).copyWith(
+                                        filledButtonTheme:
+                                            FilledButtonThemeData(
+                                          style: FilledButton.styleFrom(
+                                            elevation: 4,
+                                            shadowColor: Colors.black
+                                                .withValues(alpha: 0.24),
+                                            shape: RoundedRectangleBorder(
+                                              borderRadius:
+                                                  BorderRadius.circular(8),
+                                            ),
+                                          ),
+                                        ),
+                                        outlinedButtonTheme:
+                                            OutlinedButtonThemeData(
+                                          style: OutlinedButton.styleFrom(
+                                            foregroundColor:
+                                                const Color(0xFFFFF4F6),
+                                            side: BorderSide(
+                                                color: Colors.white
+                                                    .withValues(alpha: 0.36)),
+                                            shape: RoundedRectangleBorder(
+                                              borderRadius:
+                                                  BorderRadius.circular(8),
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.stretch,
+                                        children: [
+                                          Text(
+                                            'Choose how you want to continue',
+                                            textAlign: TextAlign.center,
+                                            style: Theme.of(context)
+                                                .textTheme
+                                                .titleMedium
+                                                ?.copyWith(
+                                                  fontWeight: FontWeight.w800,
+                                                  color:
+                                                      const Color(0xFFFFF4F6),
+                                                ),
+                                          ),
+                                          const SizedBox(height: 14),
+                                          FilledButton.icon(
+                                            onPressed: () => open(context,
+                                                const RiderSignupScreen()),
+                                            icon: const Icon(Icons.person_add),
+                                            label:
+                                                const Text('Continue as Rider'),
+                                          ),
+                                          const SizedBox(height: 10),
+                                          FilledButton.tonalIcon(
+                                            onPressed: () => open(context,
+                                                const DriverSignupScreen()),
+                                            icon: const Icon(Icons.two_wheeler),
+                                            label: const Text(
+                                                'Continue as Driver'),
+                                          ),
+                                          const SizedBox(height: 14),
+                                          OutlinedButton.icon(
+                                            onPressed: () => open(context,
+                                                const RiderLoginScreen()),
+                                            icon: const Icon(Icons.login),
+                                            label: const Text('Rider login'),
+                                          ),
+                                          const SizedBox(height: 10),
+                                          OutlinedButton.icon(
+                                            onPressed: () => open(context,
+                                                const DriverLoginScreen()),
+                                            icon:
+                                                const Icon(Icons.verified_user),
+                                            label: const Text('Driver login'),
+                                          ),
+                                          const SizedBox(height: 10),
+                                          OutlinedButton.icon(
+                                            onPressed: () => open(context,
+                                                const AdminLoginScreen()),
+                                            icon: const Icon(
+                                                Icons.admin_panel_settings),
+                                            label: const Text('Admin login'),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
                                 ),
                               ),
                               const SizedBox(height: 14),
                               Text(
-                                'SheGo',
+                                'Riders: women/girls of any age and boys below 14. Drivers: verified adult women only.',
                                 textAlign: TextAlign.center,
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .headlineMedium
-                                    ?.copyWith(
-                                      fontWeight: FontWeight.w800,
-                                      letterSpacing: 0,
-                                    ),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                'Ride Freely. Ride Safely.',
-                                textAlign: TextAlign.center,
-                                style: Theme.of(context).textTheme.bodyLarge,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  height: 1.35,
+                                  color: Colors.white.withValues(alpha: 0.74),
+                                  decoration: TextDecoration.none,
+                                ),
                               ),
                             ],
                           ),
                         ),
-                        const SizedBox(height: 28),
-                        Card(
-                          elevation: 0,
-                          color: colorScheme.surfaceContainerHighest
-                              .withValues(alpha: 0.45),
-                          shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8)),
-                          child: Padding(
-                            padding: const EdgeInsets.all(16),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              children: [
-                                Text(
-                                  'Choose how you want to continue',
-                                  textAlign: TextAlign.center,
-                                  style: Theme.of(context)
-                                      .textTheme
-                                      .titleMedium
-                                      ?.copyWith(fontWeight: FontWeight.w700),
-                                ),
-                                const SizedBox(height: 14),
-                                FilledButton.icon(
-                                  onPressed: () =>
-                                      open(context, const RiderSignupScreen()),
-                                  icon: const Icon(Icons.person_add),
-                                  label: const Text('Continue as Rider'),
-                                ),
-                                const SizedBox(height: 10),
-                                FilledButton.tonalIcon(
-                                  onPressed: () =>
-                                      open(context, const DriverSignupScreen()),
-                                  icon: const Icon(Icons.two_wheeler),
-                                  label: const Text('Continue as Driver'),
-                                ),
-                                const SizedBox(height: 14),
-                                OutlinedButton.icon(
-                                  onPressed: () =>
-                                      open(context, const RiderLoginScreen()),
-                                  icon: const Icon(Icons.login),
-                                  label: const Text('Rider login'),
-                                ),
-                                const SizedBox(height: 10),
-                                OutlinedButton.icon(
-                                  onPressed: () =>
-                                      open(context, const DriverLoginScreen()),
-                                  icon: const Icon(Icons.verified_user),
-                                  label: const Text('Driver login'),
-                                ),
-                                const SizedBox(height: 10),
-                                OutlinedButton.icon(
-                                  onPressed: () =>
-                                      open(context, const AdminLoginScreen()),
-                                  icon: const Icon(Icons.admin_panel_settings),
-                                  label: const Text('Admin login'),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 14),
-                        Text(
-                          'Riders: women/girls of any age and boys below 14. Drivers: verified adult women only.',
-                          textAlign: TextAlign.center,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontSize: 13,
-                            height: 1.35,
-                            color: colorScheme.onSurfaceVariant,
-                            decoration: TextDecoration.none,
-                          ),
-                        ),
-                      ],
+                      ),
                     ),
-                  ),
-                ),
+                  );
+                },
               ),
-            );
-          },
+            ),
+          ],
         ),
       ),
     );
@@ -2065,6 +2611,361 @@ class _DetailRow extends StatelessWidget {
           ],
         ),
       );
+}
+
+class RideStatusBadge extends StatelessWidget {
+  const RideStatusBadge({super.key, required this.status});
+
+  final String status;
+
+  @override
+  Widget build(BuildContext context) {
+    final normalized = status.trim().isEmpty ? 'PENDING' : status.toUpperCase();
+    final color = switch (normalized) {
+      'ACTIVE' || 'ACCEPTED' || 'COMPLETED' => const Color(0xFF167A3E),
+      'CANCELLED' || 'REJECTED' || 'FAILED' => const Color(0xFFB42318),
+      'PENDING' || 'REQUESTED' || 'SCHEDULED' => const Color(0xFFB7791F),
+      _ => Theme.of(context).colorScheme.primary,
+    };
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withValues(alpha: 0.25)),
+      ),
+      child: Text(
+        normalized,
+        style: TextStyle(color: color, fontWeight: FontWeight.w800),
+      ),
+    );
+  }
+}
+
+String displayValue(Map<String, dynamic> data, List<String> keys,
+    {String fallback = '-'}) {
+  for (final key in keys) {
+    final value = data[key];
+    if (value != null && value.toString().trim().isNotEmpty) {
+      return value.toString();
+    }
+  }
+  return fallback;
+}
+
+class MinorRideCard extends StatelessWidget {
+  const MinorRideCard({super.key, required this.data});
+
+  final Map<String, dynamic> data;
+
+  @override
+  Widget build(BuildContext context) {
+    final status = displayValue(data, ['rideStatus', 'status']);
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      elevation: 0,
+      color: Theme.of(context)
+          .colorScheme
+          .surfaceContainerHighest
+          .withValues(alpha: 0.48),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.family_restroom, color: Color(0xFFE83D8F)),
+                const SizedBox(width: 10),
+                Expanded(
+                    child: Text('Minor Ride Details',
+                        style: Theme.of(context).textTheme.titleMedium)),
+                RideStatusBadge(status: status),
+              ],
+            ),
+            const Divider(height: 22),
+            Wrap(
+              spacing: 12,
+              runSpacing: 12,
+              children: [
+                _InfoTile(
+                    icon: Icons.child_care,
+                    label: 'Rider Name',
+                    value: displayValue(
+                        data, ['riderName', 'childName', 'fullName', 'name'])),
+                _InfoTile(
+                    icon: Icons.cake,
+                    label: 'Rider Age',
+                    value: displayValue(data, ['riderAge', 'age'])),
+                _InfoTile(
+                    icon: Icons.supervisor_account,
+                    label: 'Guardian Name',
+                    value: displayValue(data, ['guardianName'])),
+                _InfoTile(
+                    icon: Icons.call,
+                    label: 'Guardian Contact',
+                    value: displayValue(data, [
+                      'guardianContact',
+                      'guardianMobileNumber',
+                      'guardianMobile'
+                    ])),
+                _InfoTile(
+                    icon: Icons.my_location,
+                    label: 'Pickup Location',
+                    value: displayValue(
+                        data, ['pickupLocation', 'pickupAddress', 'pickup'])),
+                _InfoTile(
+                    icon: Icons.location_on,
+                    label: 'Drop Location',
+                    value: displayValue(
+                        data, ['dropLocation', 'dropAddress', 'drop'])),
+                _InfoTile(
+                    icon: Icons.two_wheeler,
+                    label: 'Driver Name',
+                    value: displayValue(data, ['driverName'])),
+                _InfoTile(
+                    icon: Icons.pin,
+                    label: 'OTP Status',
+                    value: displayValue(data, ['otpStatus', 'otpVerified'])),
+                _InfoTile(
+                    icon: Icons.schedule,
+                    label: 'Ride Time',
+                    value: displayValue(
+                        data, ['rideTime', 'scheduledAt', 'createdAt'])),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class GuardianRideCard extends StatelessWidget {
+  const GuardianRideCard({super.key, required this.data});
+
+  final Map<String, dynamic> data;
+
+  @override
+  Widget build(BuildContext context) {
+    final status =
+        displayValue(data, ['liveRideStatus', 'rideStatus', 'status']);
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      elevation: 0,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.shield, color: Color(0xFF8F2F68)),
+                const SizedBox(width: 10),
+                Expanded(
+                    child: Text('Guardian Ride',
+                        style: Theme.of(context).textTheme.titleMedium)),
+                RideStatusBadge(status: status),
+              ],
+            ),
+            const Divider(height: 22),
+            Wrap(
+              spacing: 12,
+              runSpacing: 12,
+              children: [
+                _InfoTile(
+                    icon: Icons.child_friendly,
+                    label: 'Child Name',
+                    value: displayValue(data, ['childName'])),
+                _InfoTile(
+                    icon: Icons.person,
+                    label: 'Rider Name',
+                    value:
+                        displayValue(data, ['riderName', 'fullName', 'name'])),
+                _InfoTile(
+                    icon: Icons.supervisor_account,
+                    label: 'Guardian Name',
+                    value: displayValue(data, ['guardianName'])),
+                _InfoTile(
+                    icon: Icons.my_location,
+                    label: 'Pickup',
+                    value: displayValue(
+                        data, ['pickup', 'pickupLocation', 'pickupAddress'])),
+                _InfoTile(
+                    icon: Icons.location_on,
+                    label: 'Drop',
+                    value: displayValue(
+                        data, ['drop', 'dropLocation', 'dropAddress'])),
+                _InfoTile(
+                    icon: Icons.two_wheeler,
+                    label: 'Driver',
+                    value: displayValue(data, ['driver', 'driverName'])),
+                _InfoTile(
+                    icon: Icons.route,
+                    label: 'Live Ride Status',
+                    value: displayValue(data, ['liveRideStatus', 'status'])),
+                _InfoTile(
+                    icon: Icons.timer,
+                    label: 'ETA',
+                    value: displayValue(data, ['eta', 'estimatedArrival'])),
+                _InfoTile(
+                    icon: Icons.health_and_safety,
+                    label: 'Safety Status',
+                    value: displayValue(data, ['safetyStatus'])),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                OutlinedButton.icon(
+                    onPressed: () {},
+                    icon: const Icon(Icons.call),
+                    label: const Text('Contact')),
+                FilledButton.tonalIcon(
+                    onPressed: () {},
+                    icon: const Icon(Icons.sos),
+                    label: const Text('Emergency')),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _InfoTile extends StatelessWidget {
+  const _InfoTile(
+      {required this.icon, required this.label, required this.value});
+
+  final IconData icon;
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+        width: MediaQuery.sizeOf(context).width < 520 ? double.infinity : 220,
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(icon, size: 20, color: Theme.of(context).colorScheme.primary),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(label,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                          fontWeight: FontWeight.w700)),
+                  const SizedBox(height: 2),
+                  Text(value.trim().isEmpty ? '-' : value,
+                      style: const TextStyle(fontWeight: FontWeight.w700)),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+}
+
+class StructuredDataView extends StatelessWidget {
+  const StructuredDataView({super.key, required this.data, this.preferred});
+
+  final dynamic data;
+  final String? preferred;
+
+  @override
+  Widget build(BuildContext context) {
+    if (data is List) {
+      final rows = List<dynamic>.from(data as List);
+      if (rows.isEmpty) return const InfoStrip(text: 'No records yet.');
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: rows.map((item) {
+          if (item is Map) {
+            return _cardFor(Map<String, dynamic>.from(item));
+          }
+          return _GenericDataCard(data: {'Value': item});
+        }).toList(),
+      );
+    }
+    if (data is Map) {
+      return _cardFor(Map<String, dynamic>.from(data as Map));
+    }
+    return _GenericDataCard(data: {'Value': data});
+  }
+
+  Widget _cardFor(Map<String, dynamic> row) {
+    if (preferred == 'minor') return MinorRideCard(data: row);
+    if (preferred == 'guardian') return GuardianRideCard(data: row);
+    return _GenericDataCard(data: row);
+  }
+}
+
+class _GenericDataCard extends StatelessWidget {
+  const _GenericDataCard({required this.data});
+
+  final Map<String, dynamic> data;
+
+  @override
+  Widget build(BuildContext context) => Card(
+        margin: const EdgeInsets.only(bottom: 12),
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  const Icon(Icons.article_outlined),
+                  const SizedBox(width: 10),
+                  Expanded(
+                      child: Text(
+                    displayValue(data, ['name', 'title', 'id'],
+                        fallback: 'Details'),
+                    style: Theme.of(context).textTheme.titleMedium,
+                  )),
+                  if (displayValue(data, ['status'], fallback: '').isNotEmpty)
+                    RideStatusBadge(
+                        status: displayValue(data, ['status'], fallback: '')),
+                ],
+              ),
+              const Divider(height: 22),
+              ...data.entries.map((entry) => _DetailRow(
+                    label: _humanLabel(entry.key),
+                    value: _friendlyValue(entry.value),
+                  )),
+            ],
+          ),
+        ),
+      );
+
+  String _humanLabel(String value) => value
+      .replaceAllMapped(RegExp(r'([a-z])([A-Z])'), (m) => '${m[1]} ${m[2]}')
+      .replaceAll('_', ' ')
+      .trim()
+      .split(' ')
+      .map((word) =>
+          word.isEmpty ? word : '${word[0].toUpperCase()}${word.substring(1)}')
+      .join(' ');
+
+  String _friendlyValue(dynamic value) {
+    if (value == null || value == '') return '-';
+    if (value is Map) {
+      return value.entries
+          .map((entry) => '${_humanLabel('${entry.key}')}: ${entry.value}')
+          .join('\n');
+    }
+    if (value is List) {
+      return value.isEmpty ? '-' : value.map((item) => '$item').join(', ');
+    }
+    return '$value';
+  }
 }
 
 class LocationField extends StatelessWidget {
@@ -4558,7 +5459,7 @@ class _ApiDetailsScreenState extends State<ApiDetailsScreen> {
             loading: loading,
             error: error,
             empty: data == null,
-            child: Text(const JsonEncoder.withIndent('  ').convert(data)),
+            child: StructuredDataView(data: data),
           ),
         ],
       );
@@ -4612,7 +5513,7 @@ class _ApiListScreenState extends State<ApiListScreen> {
             loading: loading,
             error: error,
             empty: rows.isEmpty,
-            child: Text(const JsonEncoder.withIndent('  ').convert(rows)),
+            child: StructuredDataView(data: rows),
           ),
         ],
       );
@@ -4786,7 +5687,7 @@ class _RideFlowScreenState extends State<RideFlowScreen> {
             loading: loading,
             error: error,
             empty: result == null,
-            child: Text(const JsonEncoder.withIndent('  ').convert(result)),
+            child: StructuredDataView(data: result),
           ),
         ],
       );
@@ -4854,7 +5755,7 @@ class _SafetyScreenState extends State<SafetyScreen> {
           loading: loading,
           error: error,
           empty: policy == null,
-          child: Text(const JsonEncoder.withIndent('  ').convert(policy)),
+          child: StructuredDataView(data: policy),
         ),
       ],
     );
@@ -5006,6 +5907,8 @@ class _AdminScreenState extends State<AdminScreen> {
   String? error;
   String? activePath;
   dynamic result;
+  int driverDetailsPage = 0;
+  static const int driverDetailsPageSize = 10;
 
   bool get authenticated => adminToken != null;
 
@@ -5070,9 +5973,53 @@ class _AdminScreenState extends State<AdminScreen> {
     }
   }
 
+  Future<void> loadDriverDetails({int page = 0}) async {
+    if (!authenticated) return;
+    setState(() => loading = true);
+    try {
+      driverDetailsPage = page < 0 ? 0 : page;
+      result = await api.get(
+          '/api/admin/drivers?page=$driverDetailsPage&size=$driverDetailsPageSize',
+          tokenOverride: adminToken);
+      activePath = '/api/admin/drivers';
+      error = null;
+    } catch (e) {
+      if (e.toString().contains('Unauthorized') ||
+          e.toString().contains('Forbidden') ||
+          e.toString().contains('Invalid credentials')) {
+        adminToken = null;
+      }
+      error = e.toString();
+    } finally {
+      setState(() => loading = false);
+    }
+  }
+
+  Future<void> loadDriverDetail(String driverId) async {
+    if (!authenticated) return;
+    setState(() => loading = true);
+    try {
+      result = await api.get('/api/admin/drivers/$driverId',
+          tokenOverride: adminToken);
+      activePath = '/api/admin/drivers/detail';
+      error = null;
+    } catch (e) {
+      error = e.toString();
+    } finally {
+      setState(() => loading = false);
+    }
+  }
+
   Future<void> approveDriver(String driverId) async {
     await adminAction(() => api.post('/api/admin/drivers/$driverId/approve', {},
         tokenOverride: adminToken));
+  }
+
+  Future<void> approveDriverFromDetails(String driverId) async {
+    await adminAction(
+        () => api.post('/api/admin/drivers/$driverId/approve', {},
+            tokenOverride: adminToken),
+        refresh: () => loadDriverDetails(page: driverDetailsPage));
   }
 
   Future<void> rejectDriver(String driverId) async {
@@ -5105,6 +6052,36 @@ class _AdminScreenState extends State<AdminScreen> {
         ));
   }
 
+  Future<void> rejectDriverFromDetails(String driverId) async {
+    final reason = await showDialog<String>(
+      context: context,
+      builder: (context) {
+        final controller =
+            TextEditingController(text: 'Rejected by admin review');
+        return AlertDialog(
+          title: const Text('Reject driver'),
+          content: TextField(
+              controller: controller,
+              decoration: const InputDecoration(labelText: 'Reason')),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cancel')),
+            FilledButton(
+                onPressed: () => Navigator.pop(context, controller.text.trim()),
+                child: const Text('Reject')),
+          ],
+        );
+      },
+    );
+    if (reason == null) return;
+    await adminAction(
+        () => api.post(
+            '/api/admin/drivers/$driverId/reject', {'reason': reason},
+            tokenOverride: adminToken),
+        refresh: () => loadDriverDetails(page: driverDetailsPage));
+  }
+
   Future<void> requestDriverResubmission(String driverId) async {
     final reason = await showDialog<String>(
       context: context,
@@ -5135,14 +6112,19 @@ class _AdminScreenState extends State<AdminScreen> {
         ));
   }
 
-  Future<void> adminAction(Future<dynamic> Function() action) async {
+  Future<void> adminAction(Future<dynamic> Function() action,
+      {Future<void> Function()? refresh}) async {
     setState(() {
       loading = true;
       error = null;
     });
     try {
       await action();
-      await loadPath('/api/admin/pending-driver-kyc');
+      if (refresh != null) {
+        await refresh();
+      } else {
+        await loadPath('/api/admin/pending-driver-kyc');
+      }
     } catch (e) {
       setState(() => error = e.toString());
     } finally {
@@ -5195,6 +6177,11 @@ class _AdminScreenState extends State<AdminScreen> {
               icon: const Icon(Icons.two_wheeler),
               label: const Text('Pending drivers'),
             ),
+            OutlinedButton.icon(
+              onPressed: () => loadDriverDetails(),
+              icon: const Icon(Icons.badge),
+              label: const Text('Driver Details'),
+            ),
           ],
         ),
         const SizedBox(height: 16),
@@ -5222,7 +6209,252 @@ class _AdminScreenState extends State<AdminScreen> {
             .toList(),
       );
     }
-    return Text(const JsonEncoder.withIndent('  ').convert(result));
+    if (activePath == '/api/admin/drivers' && result is Map) {
+      return _driverDetailsList(Map<String, dynamic>.from(result as Map));
+    }
+    if (activePath == '/api/admin/drivers/detail' && result is Map) {
+      final driver = Map<String, dynamic>.from(result as Map);
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
+                onPressed: () => loadDriverDetails(page: driverDetailsPage),
+                icon: const Icon(Icons.arrow_back),
+                label: const Text('Back to Driver Details')),
+          ),
+          _adminDriverCard(driver, detailed: true),
+        ],
+      );
+    }
+    if (activePath == '/api/admin/minor-riders') {
+      return StructuredDataView(data: result, preferred: 'minor');
+    }
+    if (activePath == '/api/admin/pending-guardian-verifications') {
+      return StructuredDataView(data: result, preferred: 'guardian');
+    }
+    return StructuredDataView(data: result);
+  }
+
+  Widget _driverDetailsList(Map<String, dynamic> page) {
+    final drivers = List<dynamic>.from(page['content'] ?? const []);
+    final currentPage = (page['number'] as num?)?.toInt() ?? driverDetailsPage;
+    final totalPages = (page['totalPages'] as num?)?.toInt() ?? 1;
+    final totalElements =
+        (page['totalElements'] as num?)?.toInt() ?? drivers.length;
+    if (drivers.isEmpty) {
+      return const InfoStrip(text: 'No registered drivers found.');
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Expanded(
+                child: Text('All registered drivers',
+                    style: Theme.of(context).textTheme.titleMedium)),
+            RideStatusBadge(status: '$totalElements total'),
+          ],
+        ),
+        const SizedBox(height: 12),
+        ...drivers.map(
+            (item) => _adminDriverCard(Map<String, dynamic>.from(item as Map))),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            OutlinedButton.icon(
+              onPressed: currentPage <= 0
+                  ? null
+                  : () => loadDriverDetails(page: currentPage - 1),
+              icon: const Icon(Icons.chevron_left),
+              label: const Text('Previous'),
+            ),
+            Expanded(
+                child: Text(
+              'Page ${currentPage + 1} of ${totalPages == 0 ? 1 : totalPages}',
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontWeight: FontWeight.w700),
+            )),
+            OutlinedButton.icon(
+              onPressed: currentPage + 1 >= totalPages
+                  ? null
+                  : () => loadDriverDetails(page: currentPage + 1),
+              icon: const Icon(Icons.chevron_right),
+              label: const Text('Next'),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _adminDriverCard(Map<String, dynamic> driver,
+      {bool detailed = false}) {
+    final driverId = driver['driverId']?.toString();
+    final approvalStatus = driver['driverApprovalStatus']?.toString() ??
+        driver['adminApprovalStatus']?.toString() ??
+        'PENDING';
+    final activeStatus =
+        driver['profileActiveStatus']?.toString() ?? 'INACTIVE';
+    final isPending = approvalStatus.toUpperCase() == 'PENDING';
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      elevation: 0,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.badge, color: Color(0xFFE83D8F)),
+                const SizedBox(width: 10),
+                Expanded(
+                    child: Text(driver['fullName']?.toString() ?? 'Driver',
+                        style: Theme.of(context).textTheme.titleMedium)),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: [
+                    RideStatusBadge(status: approvalStatus),
+                    RideStatusBadge(status: activeStatus),
+                  ],
+                ),
+              ],
+            ),
+            const Divider(height: 22),
+            Wrap(
+              spacing: 12,
+              runSpacing: 12,
+              children: [
+                _InfoTile(
+                    icon: Icons.confirmation_number,
+                    label: 'Driver ID',
+                    value: driverId ?? '-'),
+                _InfoTile(
+                    icon: Icons.call,
+                    label: 'Mobile Number',
+                    value: driver['mobileNumber']?.toString() ?? '-'),
+                _InfoTile(
+                    icon: Icons.email,
+                    label: 'Email',
+                    value: driver['email']?.toString() ?? '-'),
+                _InfoTile(
+                    icon: Icons.fact_check,
+                    label: 'Aadhaar Status',
+                    value:
+                        driver['aadhaarVerificationStatus']?.toString() ?? '-'),
+                _InfoTile(
+                    icon: Icons.credit_card,
+                    label: 'License Status',
+                    value: driver['drivingLicenseStatus']?.toString() ?? '-'),
+                _InfoTile(
+                    icon: Icons.two_wheeler,
+                    label: 'Vehicle Type',
+                    value: driver['vehicleType']?.toString() ?? '-'),
+                _InfoTile(
+                    icon: Icons.pin,
+                    label: 'Vehicle Reg. No.',
+                    value:
+                        driver['vehicleRegistrationNumber']?.toString() ?? '-'),
+                _InfoTile(
+                    icon: Icons.policy,
+                    label: 'Insurance Status',
+                    value: driver['insuranceStatus']?.toString() ?? '-'),
+                _InfoTile(
+                    icon: Icons.folder_copy,
+                    label: 'Documents',
+                    value: driver['documentSubmissionStatus']?.toString() ??
+                        'DOCUMENTS_PENDING'),
+                _InfoTile(
+                    icon: Icons.schedule,
+                    label: 'Signup Date',
+                    value: driver['signupDate']?.toString() ?? '-'),
+                _InfoTile(
+                    icon: Icons.update,
+                    label: 'Last Updated',
+                    value: driver['lastUpdatedDate']?.toString() ?? '-'),
+              ],
+            ),
+            if (detailed) ...[
+              const SizedBox(height: 12),
+              DetailSectionCard(
+                  title: 'Verification Details',
+                  icon: Icons.verified_user,
+                  rows: {
+                    'Verification Status': driver['verificationStatus'],
+                    'KYC Status': driver['kycStatus'],
+                    'Admin Approval': driver['adminApprovalStatus'],
+                    'Admin Approved':
+                        driver['adminApproved'] == true ? 'Yes' : 'No',
+                    'Available': driver['available'] == true ? 'Yes' : 'No',
+                    'Online': driver['online'] == true ? 'Yes' : 'No',
+                    'Aadhaar Last 4': driver['aadhaarLast4'],
+                    'Rejection Reason': driver['verificationRejectionReason'],
+                  }),
+              DetailSectionCard(
+                  title: 'Submitted Documents',
+                  icon: Icons.folder_copy,
+                  rows: {
+                    'Profile photo/selfie': driver['profilePhotoStorageKey'] ??
+                        previewLabel(driver['profilePhotoData']),
+                    'Aadhaar': driver['aadhaarStorageKey'] ??
+                        previewLabel(driver['aadhaarDocumentData']),
+                    'License': driver['licenseStorageKey'] ??
+                        previewLabel(driver['licenseDocumentData']),
+                    'Vehicle': driver['vehicleDocumentStorageKey'] ??
+                        previewLabel(driver['vehicleDocumentData']),
+                    'Insurance': driver['insuranceDocumentStorageKey'] ??
+                        previewLabel(driver['insuranceDocumentData']),
+                  }),
+              documentPreviewForAdmin('Profile photo/selfie',
+                  driver['profilePhotoData']?.toString()),
+              documentPreviewForAdmin('Aadhaar document',
+                  driver['aadhaarDocumentData']?.toString()),
+              documentPreviewForAdmin(
+                  'Driving license', driver['licenseDocumentData']?.toString()),
+              documentPreviewForAdmin('Vehicle document',
+                  driver['vehicleDocumentData']?.toString()),
+              documentPreviewForAdmin('Insurance document',
+                  driver['insuranceDocumentData']?.toString()),
+            ],
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                if (!detailed)
+                  OutlinedButton.icon(
+                    onPressed: driverId == null
+                        ? null
+                        : () => loadDriverDetail(driverId),
+                    icon: const Icon(Icons.visibility),
+                    label: const Text('View Details'),
+                  ),
+                if (isPending)
+                  FilledButton.icon(
+                    onPressed: loading || driverId == null
+                        ? null
+                        : () => approveDriverFromDetails(driverId),
+                    icon: const Icon(Icons.check),
+                    label: const Text('Approve'),
+                  ),
+                if (isPending)
+                  OutlinedButton.icon(
+                    onPressed: loading || driverId == null
+                        ? null
+                        : () => rejectDriverFromDetails(driverId),
+                    icon: const Icon(Icons.close),
+                    label: const Text('Reject'),
+                  ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Widget _pendingDriverTile(Map<String, dynamic> driver) {
@@ -5529,7 +6761,10 @@ class _SimpleActionScreenState extends State<SimpleActionScreen> {
             loading: loading,
             error: error,
             empty: result == null,
-            child: Text(const JsonEncoder.withIndent('  ').convert(result)),
+            child: StructuredDataView(
+                data: result,
+                preferred:
+                    widget.path.contains('child-rides') ? 'guardian' : null),
           ),
         ],
       );
@@ -5579,16 +6814,13 @@ class FeatureList extends StatelessWidget {
             error: error,
             empty: rows.isEmpty,
             child: Column(
-              children: rows
-                  .map((row) => Card(
-                        child: ListTile(
-                          title: Text(row['commuteType']?.toString() ??
-                              row['name']?.toString() ??
-                              'SheGo item'),
-                          subtitle: Text(row.toString()),
-                        ),
-                      ))
-                  .toList(),
+              children: rows.map((row) {
+                if (row is Map) {
+                  return StructuredDataView(
+                      data: Map<String, dynamic>.from(row));
+                }
+                return StructuredDataView(data: {'Value': row});
+              }).toList(),
             ),
           ),
         ],

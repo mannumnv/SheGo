@@ -66,6 +66,40 @@ test.describe('Driver post-login verification flow', () => {
     expect(active.online).toBe(true);
   });
 
+  test('admin driver details list shows manual signup and profile approval keeps documents inactive', async ({ request }) => {
+    const drivers = new DriverClient(request);
+    const admin = await adminClient(request);
+    const payload = manualOnlyDriver();
+    const token = await drivers.signupToken(payload);
+    const profile = await expectOk(await drivers.profile(token));
+
+    const page = await expectOk(await admin.drivers(0, 10));
+    expect(page.content.some((driver: any) => driver.driverId === profile.id)).toBe(true);
+    const listed = page.content.find((driver: any) => driver.driverId === profile.id);
+    expect(listed.documentSubmissionStatus).toBe('DOCUMENTS_PENDING');
+    expect(listed.driverApprovalStatus).toBe('PENDING');
+    expect(listed.profileActiveStatus).toBe('INACTIVE');
+
+    const details = await expectOk(await admin.driver(profile.id));
+    expect(details.driverId).toBe(profile.id);
+    expect(details.mobileNumber).toBe(payload.mobileNumber);
+    expect(details.vehicleRegistrationNumber).toBe(payload.vehicleRegistrationNumber);
+    expect(details.aadhaarVerificationStatus).toBe('MISSING');
+    expect(details.drivingLicenseStatus).toBe('MISSING');
+    expect(details.insuranceStatus).toBe('MISSING');
+
+    await expectOk(await admin.approveDriverVerification(profile.id));
+    const approvedProfile = await expectOk(await drivers.profile(token));
+    expect(approvedProfile.adminApprovalStatus).toBe('APPROVED');
+    expect(approvedProfile.verificationStatus).toBe('INCOMPLETE');
+    expect(approvedProfile.available).toBe(false);
+    expect(approvedProfile.online).toBe(false);
+    await expectBadRequest(await drivers.availability(token, true, true), 'documents must be approved');
+
+    const notifications = await expectOk(await request.get(apiUrl('/api/notifications'), { headers: auth(token) }));
+    expect(notifications.some((item: any) => item.body === 'Your driver profile has been approved. Please upload required documents within 24 hours to activate your profile.')).toBe(true);
+  });
+
   test('admin rejection stores reason and driver can resubmit for approval', async ({ request }) => {
     const drivers = new DriverClient(request);
     const admin = await adminClient(request);

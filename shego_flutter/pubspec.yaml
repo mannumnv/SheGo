@@ -31,3 +31,4 @@ flutter:
   uses-material-design: true
   assets:
     - assets/images/shego_logo.png
+    - assets/images/woman_scooty.png

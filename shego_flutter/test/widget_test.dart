@@ -8,7 +8,7 @@ void main() {
       (WidgetTester tester) async {
     await tester.pumpWidget(const SheGoApp());
 
-    expect(find.text('Ride Freely. Ride Safely.'), findsOneWidget);
+    expect(find.text('Wo Chali....'), findsWidgets);
   });
 
   testWidgets('SheGo navigates from splash to signup selection',
@@ -55,6 +55,43 @@ void main() {
 
     expect(find.text('Personal Details'), findsOneWidget);
     expect(find.text('Vehicle Details'), findsOneWidget);
+    expect(find.textContaining('{'), findsNothing);
+  });
+
+  testWidgets('minor and guardian ride cards avoid raw JSON',
+      (WidgetTester tester) async {
+    await tester.pumpWidget(const MaterialApp(
+        home: Scaffold(
+            body: SingleChildScrollView(
+                child: Column(children: [
+      MinorRideCard(data: {
+        'riderName': 'Anita',
+        'riderAge': 12,
+        'guardianName': 'Priya',
+        'guardianMobileNumber': '9876543210',
+        'pickup': 'Delhi',
+        'drop': 'Noida',
+        'status': 'ACCEPTED',
+        'driverName': 'Meera',
+        'otpStatus': 'VERIFIED',
+        'rideTime': '10:30 AM'
+      }),
+      GuardianRideCard(data: {
+        'childName': 'Anita',
+        'guardianName': 'Priya',
+        'pickup': 'Delhi',
+        'drop': 'Noida',
+        'driverName': 'Meera',
+        'liveRideStatus': 'ACTIVE',
+        'eta': '8 min',
+        'safetyStatus': 'SAFE'
+      }),
+    ])))));
+
+    expect(find.text('Minor Ride Details'), findsOneWidget);
+    expect(find.text('Guardian Ride'), findsOneWidget);
+    expect(find.text('Contact'), findsOneWidget);
+    expect(find.text('Emergency'), findsOneWidget);
     expect(find.textContaining('{'), findsNothing);
   });
 }

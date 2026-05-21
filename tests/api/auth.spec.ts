@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { AuthClient } from '../clients/authClient';
+import { apiUrl, AuthClient } from '../clients/authClient';
 import { RiderClient } from '../clients/riderClient';
 import { DriverClient } from '../clients/driverClient';
 import { adultFemaleDriver, adultFemaleRider } from '../fixtures/testUsers';

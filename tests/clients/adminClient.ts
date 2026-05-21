@@ -13,6 +13,14 @@ export class AdminClient {
     return this.request.get(apiUrl('/api/admin/pending-driver-kyc'), { headers: auth(this.token) });
   }
 
+  drivers(page = 0, size = 10) {
+    return this.request.get(apiUrl(`/api/admin/drivers?page=${page}&size=${size}`), { headers: auth(this.token) });
+  }
+
+  driver(driverId: string) {
+    return this.request.get(apiUrl(`/api/admin/drivers/${driverId}`), { headers: auth(this.token) });
+  }
+
   pendingGuardianVerifications() {
     return this.request.get(apiUrl('/api/admin/pending-guardian-verifications'), { headers: auth(this.token) });
   }
@@ -23,6 +31,10 @@ export class AdminClient {
 
   rejectDriverVerification(driverId: string, reason = 'Rejected by automated test') {
     return this.request.post(apiUrl(`/api/admin/reject-driver-verification?driverId=${driverId}&reason=${encodeURIComponent(reason)}`), { headers: auth(this.token), data: {} });
+  }
+
+  rejectDriver(driverId: string, reason = 'Rejected by automated test') {
+    return this.request.post(apiUrl(`/api/admin/drivers/${driverId}/reject`), { headers: auth(this.token), data: { reason } });
   }
 
   requestDriverResubmission(driverId: string, reason = 'Please upload clearer documents') {
